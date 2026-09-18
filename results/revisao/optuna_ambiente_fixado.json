@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "versoes": {
+      "xgboost": "3.2.0",
+      "catboost": "1.2.10"
+    },
+    "n_janelas": 103,
+    "horizonte": 6,
+    "min_train": 60,
+    "nota": "as tres colunas avaliadas no mesmo ambiente; a busca nao foi refeita, so os hiperparametros vencedores reavaliados"
+  },
+  "modelos": {
+    "catboost": {
+      "base": 6.589326365906759,
+      "dev": 6.416290308883435,
+      "oracle": 6.34710228642503,
+      "ganho_dev": 0.1730360570233236,
+      "ganho_oracle": 0.24222407948172897,
+      "divergencia_contra_origem": {
+        "base": 2.6365906759195923e-05,
+        "dev": 1.6564527527407336e-11,
+        "oracle": 2.2864250297516264e-06
+      }
+    },
+    "xgboost": {
+      "base": 6.832390134964376,
+      "dev": 7.0648751869828725,
+      "oracle": 6.2496807065631526,
+      "ganho_dev": -0.23248505201849667,
+      "ganho_oracle": 0.5827094284012233,
+      "divergencia_contra_origem": {
+        "base": 0.02110986503562451,
+        "dev": 1.7127632645497215e-11,
+        "oracle": 0.0252807065631524
+      }
+    }
+  }
+}

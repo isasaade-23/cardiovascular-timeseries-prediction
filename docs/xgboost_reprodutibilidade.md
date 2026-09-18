@@ -76,6 +76,29 @@ A comparação de tuning também é robusta: sob um mesmo ambiente (3.2.0), o XG
 6.832390 para 7.064875 com os hiperparâmetros otimizados, ou seja, piora 0,23 pp. O sinal
 não depende de qual ambiente se escolhe.
 
+## Onde isso já apareceu no texto
+
+A tabela de ajuste de hiperparâmetros nasceu com cada coluna medida no ambiente de quem
+rodou a busca. Como a base do XGBoost lá era 6,85 (2.x) e aqui é 6,83 (3.2.0), o mesmo ganho
+saía como 0,21 pp na tabela e 0,23 pp na prosa. Não era erro de conta, era mistura de
+ambientes, e foi a Isa quem localizou.
+
+Resolvido reavaliando os hiperparâmetros vencedores aqui, em
+`scripts/reproduz_optuna_fixado.py`. O CatBoost reproduz os três valores de origem com
+divergência **0,0000**; o XGBoost reproduz o modo honesto exato (7,064875) e diverge na base
+(0,0211) e no teto (0,0253). É o mesmo comportamento desta página, e é por isso que a tabela
+passou a usar o medido no ambiente fixado.
+
+| coluna | CatBoost | XGBoost |
+|---|---:|---:|
+| sem ajuste | 6,589326 | 6,832390 |
+| busca honesta | 6,416290 | 7,064875 |
+| teto com vazamento | 6,347102 | 6,249681 |
+
+Efeito colateral que valia saber: o teto vazado do XGBoost, 6,2497, **passa** o naive sazonal
+de 6,2693 por 0,02 pp. O texto antes dizia que nem o teto alcançava a referência, o que valia
+para o CatBoost e não para o XGBoost. Agora declara a exceção.
+
 ## Decisão pendente
 
 Regenerar a linha do XGBoost com um ambiente fixado obrigaria a regenerar também as tabelas

@@ -58,19 +58,25 @@ def tab_optuna():
     desempenho, e o limite superior do que qualquer busca poderia dar. Nem esse limite
     alcanca os tres modelos lideres.
     """
-    fontes = {
-        "catboost": (carrega("ceiling_catboost.json")["catboost"],
-                     carrega("optuna_catboost_dev_base.json")),
-        "xgboost": (carrega("ceiling_xgboost.json")["xgboost"],
-                    carrega("optuna_xgboost_dev_base.json")),
+    # As tres colunas vem de scripts/reproduz_optuna_fixado.py, que reavalia os
+    # hiperparametros vencedores no ambiente que requirements-optional.txt fixa. Antes cada
+    # coluna vinha do ambiente de quem rodou a busca, e isso produzia duas versoes do mesmo
+    # ganho do XGBoost, 0,21 pp la e 0,23 pp aqui. O CatBoost reproduz os tres valores de
+    # origem exatamente; o XGBoost nao, pelo motivo de docs/xgboost_reprodutibilidade.md, e
+    # e por isso que o medido aqui e o que vale.
+    fixado = carrega("optuna_ambiente_fixado.json")["modelos"]
+    ORIGEM_XGB = carrega("ceiling_xgboost.json")["xgboost"]["baseline_reproduzida"]
+    orcamento = {
+        "catboost": (carrega("optuna_catboost_dev_base.json"),
+                     carrega("ceiling_catboost.json")["catboost"]),
+        "xgboost": (carrega("optuna_xgboost_dev_base.json"),
+                    carrega("ceiling_xgboost.json")["xgboost"]),
     }
     linhas = []
-    for m, (ceil, dev) in fontes.items():
-        # Base = o que ESTE ambiente produziu sem ajuste, nao o valor da Tabela 1. As
-        # colunas dev e oracle vieram daqui; comparar contra um base de outro ambiente
-        # misturaria o efeito do ajuste com a diferenca de versao do XGBoost.
-        b = ceil["baseline_reproduzida"]
-        d, o = dev["smape_benchmark"], ceil["ceiling_smape"]
+    for m in ("catboost", "xgboost"):
+        dev, ceil = orcamento[m]
+        b = fixado[m]["base"]
+        d, o = fixado[m]["dev"], fixado[m]["oracle"]
         linhas.append(
             f"{ROTULO[m]} & {num(b, 2)} & {num(d, 2)} & {num(o, 2)} & "
             f"{sgn(b - d, 2)} & {sgn(b - o, 2)} & "
@@ -107,14 +113,21 @@ score on the test forecasts themselves. That is not a result, it is a bound: no 
 without a time machine can do better. Both models were given the same budget, reported in
 the last two columns as honest trials plus leaked trials and total wall clock. The honest
 search buys CatBoost less than two tenths of a percentage point and costs XGBoost two
-tenths, and neither tuned model reaches the seasonal naive method of {num(SNAIVE, 2)}\%.
+tenths, and neither honestly tuned model reaches the seasonal naive method of
+{num(SNAIVE, 2)}\%. The leaked column does reach it once, for XGBoost, by
+{SNAIVE - fixado['xgboost']['oracle']:.3f} of a percentage point. That margin is an
+order of magnitude below anything this paper treats as a difference, and it is the
+score of a configuration chosen by looking at the answer, so it bounds what tuning
+could buy rather than showing what it does buy. All three columns are measured in
+the environment pinned by the repository, so the gains compare like with like.
 Even the leaked bound leaves both more than a percentage point behind the three leading
 models of Table~\ref{{tab:desempenho}}. Under-tuning is therefore not the explanation for
-the boosting results. The untuned column is the value this environment produces, which for
-XGBoost is {num(fontes["xgboost"][0]["baseline_reproduzida"], 2)}\% rather than the
-{num(fontes["xgboost"][0]["baseline_esperada"], 2)}\% of the original run: XGBoost does not
-reproduce across library versions, a limitation already declared in the manuscript. All
-three columns of a row come from the same environment, so the gains are unaffected.
+the boosting results. The untuned column is the value the pinned environment produces, which for
+XGBoost is {num(fixado["xgboost"]["base"], 2)}\% rather than the
+{num(ORIGEM_XGB, 2)}\% of the environment where the search was first run: XGBoost does not
+reproduce across library versions, a limitation already declared in the manuscript. The
+CatBoost row reproduces its three original values exactly, which is what isolates that
+limitation to one model.
 \end{{minipage}}
 \end{{table}}""")
 

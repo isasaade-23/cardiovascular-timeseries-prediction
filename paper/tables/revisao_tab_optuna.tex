@@ -15,7 +15,7 @@ untuned model.}
 Model & Untuned & Honest & Leaked & Honest & Leaked & Trials & Hours \\
 \midrule
 CatBoost & 6.59 & 6.42 & 6.35 & $+0.17$ & $+0.24$ & 40 + 60 & 2.1 \\
-XGBoost & 6.85 & 7.06 & 6.22 & $-0.21$ & $+0.63$ & 40 + 60 & 1.1 \\
+XGBoost & 6.83 & 7.06 & 6.25 & $-0.23$ & $+0.58$ & 40 + 60 & 1.1 \\
 \midrule
 Seasonal naive & \multicolumn{3}{c}{6.27} & --- & --- & --- & --- \\
 \bottomrule
@@ -31,13 +31,20 @@ score on the test forecasts themselves. That is not a result, it is a bound: no 
 without a time machine can do better. Both models were given the same budget, reported in
 the last two columns as honest trials plus leaked trials and total wall clock. The honest
 search buys CatBoost less than two tenths of a percentage point and costs XGBoost two
-tenths, and neither tuned model reaches the seasonal naive method of 6.27\%.
+tenths, and neither honestly tuned model reaches the seasonal naive method of
+6.27\%. The leaked column does reach it once, for XGBoost, by
+0.020 of a percentage point. That margin is an
+order of magnitude below anything this paper treats as a difference, and it is the
+score of a configuration chosen by looking at the answer, so it bounds what tuning
+could buy rather than showing what it does buy. All three columns are measured in
+the environment pinned by the repository, so the gains compare like with like.
 Even the leaked bound leaves both more than a percentage point behind the three leading
 models of Table~\ref{tab:desempenho}. Under-tuning is therefore not the explanation for
-the boosting results. The untuned column is the value this environment produces, which for
-XGBoost is 6.85\% rather than the
-6.83\% of the original run: XGBoost does not
-reproduce across library versions, a limitation already declared in the manuscript. All
-three columns of a row come from the same environment, so the gains are unaffected.
+the boosting results. The untuned column is the value the pinned environment produces, which for
+XGBoost is 6.83\% rather than the
+6.85\% of the environment where the search was first run: XGBoost does not
+reproduce across library versions, a limitation already declared in the manuscript. The
+CatBoost row reproduces its three original values exactly, which is what isolates that
+limitation to one model.
 \end{minipage}
 \end{table}
