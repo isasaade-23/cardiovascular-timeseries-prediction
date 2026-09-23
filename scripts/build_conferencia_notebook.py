@@ -48,9 +48,13 @@ SERIE_CSV = "results/series/serie_eventos_sp_sim_real_2010_2023.csv"
 # --------------------------------------------------------------------- celulas
 
 CEL_SETUP = '''
-# Clona o repositorio e entra no commit que se quer conferir. O token vem dos Secrets
-# do Colab (icone de chave na barra lateral), num segredo chamado GITHUB_TOKEN, e nao
-# colado numa celula: o notebook fica salvo com o que estiver escrito nele.
+# Clona o repositorio e entra no commit que se quer conferir.
+#
+# O repositorio e publico, entao o clone nao pede credencial nenhuma. Token so faz
+# falta para a ultima celula, que envia o resultado, e ela e opcional. Se um segredo
+# GITHUB_TOKEN existir nos Secrets do Colab (icone de chave na barra lateral), ele e
+# usado; senao o clone segue anonimo. Token nunca vai colado numa celula: o notebook
+# fica salvo com o que estiver escrito nele.
 import os, subprocess, sys, json, re, shutil
 from pathlib import Path
 
@@ -65,14 +69,15 @@ if not TOKEN:
         TOKEN = userdata.get("GITHUB_TOKEN")
     except Exception:
         TOKEN = None
-if not TOKEN:
-    from getpass import getpass
-    TOKEN = getpass("Token do GitHub com acesso de leitura ao repositorio: ")
-TOKEN = TOKEN.strip()
 
 if Path(DESTINO).exists():
     shutil.rmtree(DESTINO)
-url = f"https://x-access-token:{TOKEN}@github.com/{REPO}.git"
+if TOKEN:
+    url = f"https://x-access-token:{TOKEN.strip()}@github.com/{REPO}.git"
+    print("clone autenticado (o envio da ultima celula fica disponivel)")
+else:
+    url = f"https://github.com/{REPO}.git"
+    print("clone anonimo: da para conferir tudo, menos enviar na ultima celula")
 subprocess.run(["git", "clone", "--quiet", url, DESTINO], check=True)
 subprocess.run(["git", "-C", DESTINO, "checkout", "--quiet", REF], check=True)
 os.chdir(DESTINO)
@@ -553,7 +558,10 @@ CEL_COMMIT = '''
 BRANCH = "conferencia-regeneracao"  #@param {type:"string"}
 ENVIAR = False  #@param {type:"boolean"}
 
-if ENVIAR:
+if ENVIAR and not TOKEN:
+    print("Sem GITHUB_TOKEN nos Secrets, o push nao tem como autenticar.")
+    print("Baixe docs/conferencia_regeneracao.md e results/conferencia/ e commite local.")
+elif ENVIAR:
     !git config user.email "$(git log -1 --format=%ae)"
     !git config user.name "$(git log -1 --format=%an)"
     !git checkout -b "$BRANCH"
