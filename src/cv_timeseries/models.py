@@ -216,50 +216,61 @@ class _LimitadorDeTaxa:
         self._ultima = time.monotonic()
 
 
-class _TabPFNRegressorLimitado:
-    """Adapta o TabPFNRegressor da API ao contrato sklearn que o skforecast usa.
+_CLASSE_TABPFN = None
+
+
+def _classe_tabpfn_limitada():
+    """Constrói, uma vez só, o adaptador entre a API do TabPFN e o contrato sklearn.
+
+    Construída aqui dentro, e não no topo do módulo, porque herda de `BaseEstimator`:
+    o skforecast clona o regressor antes de ajustar, e clonar exige `get_params` e o
+    protocolo de estimador. Herdar resolve isso sem reimplementá-lo — e importar o
+    sklearn no topo quebraria o import preguiçoso que o resto do módulo mantém.
 
     Duas coisas entram aqui e não no regressor original: o limitador de taxa e a
     retentativa. Ambas são da via de rede, não do modelo, e por isso ficam fora do
     protocolo: a sequência de janelas, os lags e a recursão continuam sendo os mesmos
     que rodam o XGBoost e o CatBoost.
     """
+    global _CLASSE_TABPFN
+    if _CLASSE_TABPFN is not None:
+        return _CLASSE_TABPFN
 
-    def __init__(self, tentativas: int = 5, **kwargs):
-        from tabpfn_client import TabPFNRegressor
+    import time
 
-        self._modelo = TabPFNRegressor(**kwargs)
-        self._tentativas = tentativas
-        self._lim_fit = _LimitadorDeTaxa(50)
-        self._lim_pred = _LimitadorDeTaxa(50)
+    from sklearn.base import BaseEstimator, RegressorMixin
 
-    def _com_retentativa(self, fn, limitador):
-        import time
+    class _TabPFNRegressorLimitado(RegressorMixin, BaseEstimator):
+        def __init__(self, tentativas: int = 5, por_minuto: int = 50):
+            self.tentativas = tentativas
+            self.por_minuto = por_minuto
 
-        for tentativa in range(1, self._tentativas + 1):
-            limitador.espera()
-            try:
-                return fn()
-            except Exception:
-                if tentativa == self._tentativas:
-                    raise
-                time.sleep(2.0 ** tentativa)
-        raise RuntimeError("inalcançável")
+        def _com_retentativa(self, fn, limitador):
+            for tentativa in range(1, self.tentativas + 1):
+                limitador.espera()
+                try:
+                    return fn()
+                except Exception:
+                    if tentativa == self.tentativas:
+                        raise
+                    time.sleep(2.0 ** tentativa)
+            raise RuntimeError("inalcançável")
 
-    def get_params(self, deep: bool = True):
-        return {"tentativas": self._tentativas}
+        def fit(self, X, y):
+            from tabpfn_client import TabPFNRegressor
 
-    def set_params(self, **params):
-        for k, v in params.items():
-            setattr(self, k, v)
-        return self
+            self._modelo = TabPFNRegressor()
+            self._lim_fit = _LimitadorDeTaxa(self.por_minuto)
+            self._lim_pred = _LimitadorDeTaxa(self.por_minuto)
+            self._com_retentativa(lambda: self._modelo.fit(X, y), self._lim_fit)
+            return self
 
-    def fit(self, X, y):
-        self._com_retentativa(lambda: self._modelo.fit(X, y), self._lim_fit)
-        return self
+        def predict(self, X):
+            return self._com_retentativa(
+                lambda: self._modelo.predict(X), self._lim_pred)
 
-    def predict(self, X):
-        return self._com_retentativa(lambda: self._modelo.predict(X), self._lim_pred)
+    _CLASSE_TABPFN = _TabPFNRegressorLimitado
+    return _CLASSE_TABPFN
 
 
 class TabPFNForecaster(_SkforecastRecursiveForecaster):
@@ -283,7 +294,7 @@ class TabPFNForecaster(_SkforecastRecursiveForecaster):
         self._kwargs = kwargs
 
     def _build_regressor(self):
-        return _TabPFNRegressorLimitado(**self._kwargs)
+        return _classe_tabpfn_limitada()(**self._kwargs)
 
 
 class TimesFMForecaster(Forecaster):
