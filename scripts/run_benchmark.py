@@ -22,6 +22,16 @@ from cv_timeseries.models import (
 )
 
 
+class BenchmarkIncompleto(RuntimeError):
+    """Uma janela ou um modelo pedido nao chegou ao resultado.
+
+    Existe porque o silencio era pior que a falha: o backtest descartava a janela com um
+    [WARN], seguia, e o CSV saia com menos previsoes sem nada no arquivo dizendo isso. O
+    erro so aparecia muito depois, no `to_matrices` do bootstrap, que exige o retangulo
+    janela por horizonte, e ai ja era longe da causa.
+    """
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark de modelos de forecasting")
     parser.add_argument("--input-csv", required=True, help="CSV com série temporal")
@@ -95,37 +105,42 @@ def build_models(model_names: list[str]):
         raise ValueError(f"Modelos inválidos: {sorted(invalid)}")
 
     models = []
+    # Dependencia ausente vira erro, e nao aviso: quem pediu o modelo na linha de comando
+    # espera ele no resultado. Antes o benchmark seguia sem ele e o CSV saia com uma linha
+    # a menos, o que ninguem nota lendo so o arquivo. Coletadas todas antes de falhar, para
+    # quem esta montando o ambiente ver a lista inteira de uma vez.
+    indisponiveis: list[str] = []
 
     if "sarima" in selected:
         # try/except como nos outros quatro: dependencia ausente vira aviso, nao queda.
         try:
             models.append(SarimaForecaster())
         except Exception as exc:
-            print(f"[WARN] SARIMA indisponível: {exc}")
+            indisponiveis.append(f"SARIMA: {exc}")
 
     if "prophet" in selected:
         try:
             models.append(ProphetForecaster())
         except Exception as exc:
-            print(f"[WARN] Prophet indisponível: {exc}")
+            indisponiveis.append(f"Prophet: {exc}")
 
     if "timesfm" in selected:
         try:
             models.append(TimesFMForecaster())
         except Exception as exc:
-            print(f"[WARN] TimesFM indisponível: {exc}")
+            indisponiveis.append(f"TimesFM: {exc}")
 
     if "xgboost" in selected:
         try:
             models.append(XGBoostForecaster())
         except Exception as exc:
-            print(f"[WARN] XGBoost indisponível: {exc}")
+            indisponiveis.append(f"XGBoost: {exc}")
 
     if "catboost" in selected:
         try:
             models.append(CatBoostForecaster())
         except Exception as exc:
-            print(f"[WARN] CatBoost indisponível: {exc}")
+            indisponiveis.append(f"CatBoost: {exc}")
 
     # Baselines ingenuas: sem dependencia externa, entao nao precisam de try/except.
     # Rodam em qualquer maquina, que e parte do ponto: a referencia tem que estar
@@ -135,6 +150,12 @@ def build_models(model_names: list[str]):
                       ("snaive_drift", SeasonalNaiveDriftForecaster)):
         if nome in selected:
             models.append(cls())
+
+    if indisponiveis:
+        raise BenchmarkIncompleto(
+            "modelos pedidos e indisponíveis neste ambiente:\n  "
+            + "\n  ".join(indisponiveis)
+        )
 
     if not models:
         raise RuntimeError("Nenhum modelo disponível para rodar.")
@@ -156,6 +177,9 @@ def run_backtest(
     y_true_all = []
     y_pred_all = []
     rows = []
+    # Motivo de cada janela perdida, para o erro no fim listar todas de uma vez em vez de
+    # morrer na primeira. Quem esta consertando o ambiente quer ver o conjunto.
+    descartadas: list[str] = []
 
     for window_id, (train, test) in enumerate(
         rolling_origin_splits(
@@ -180,18 +204,19 @@ def run_backtest(
             else:
                 y_pred = model.forecast(train, horizon=len(test))
         except Exception as exc:
-            print(f"[WARN] Falha em {label} (janela {window_id}): {exc}")
+            descartadas.append(f"janela {window_id}: {type(exc).__name__}: {exc}")
             continue
 
         y_true = test.to_numpy(dtype=float)
         y_pred = np.asarray(y_pred, dtype=float)
 
         if len(y_pred) != len(y_true):
-            print(f"[WARN] Tamanho inválido em {label}: pred={len(y_pred)} true={len(y_true)}")
+            descartadas.append(
+                f"janela {window_id}: tamanho pred={len(y_pred)} true={len(y_true)}")
             continue
 
         if not np.all(np.isfinite(y_pred)):
-            print(f"[WARN] Previsão não-finita em {label} (janela {window_id}); janela descartada")
+            descartadas.append(f"janela {window_id}: previsão não-finita")
             continue
 
         # Diagnóstico (substitui o antigo clamp, que corrigia valores só para
@@ -220,8 +245,21 @@ def run_backtest(
                 }
             )
 
-    if not y_true_all:
-        return None, pd.DataFrame(rows)
+    # Exigencia dura: toda janela que o rolling origin oferece tem que chegar ao resultado.
+    # O numero nao esta escrito no codigo de proposito; ele sai do proprio gerador de
+    # janelas, entao muda junto com serie, horizonte e treino minimo sem ninguem lembrar.
+    esperadas = sum(
+        1 for _ in rolling_origin_splits(
+            series, horizon=horizon, min_train_size=min_train_size,
+            max_train_size=max_train_size,
+        )
+    )
+    if len(y_true_all) != esperadas:
+        detalhe = "\n  ".join(descartadas) if descartadas else "sem motivo registrado"
+        raise BenchmarkIncompleto(
+            f"{label}: {len(y_true_all)} de {esperadas} janelas completas. "
+            f"O resultado seria comparável a nada.\n  {detalhe}"
+        )
 
     y_true_cat = np.concatenate(y_true_all)
     y_pred_cat = np.concatenate(y_pred_all)
@@ -318,4 +356,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BenchmarkIncompleto as exc:
+        # Codigo diferente de zero: em pipeline, falha silenciosa e resultado errado que
+        # ninguem confere. Nada e escrito, porque CSV parcial e pior que CSV ausente.
+        print(f"\n[ERRO] benchmark incompleto, nada foi escrito.\n{exc}")
+        raise SystemExit(1) from None
