@@ -78,16 +78,28 @@ if not TOKEN:
     except Exception:
         TOKEN = None
 
+# Sai do destino ANTES de apaga-lo. Rodar esta celula duas vezes na mesma sessao
+# deixava o processo dentro de um diretorio recem-apagado, e o git falhava com 128
+# sem dizer por que: ele nao consegue nem ler o proprio diretorio de trabalho.
+os.chdir("/content")
 if Path(DESTINO).exists():
     shutil.rmtree(DESTINO)
+
 if TOKEN:
     url = f"https://x-access-token:{TOKEN.strip()}@github.com/{REPO}.git"
     print("clone autenticado (o envio da ultima celula fica disponivel)")
 else:
     url = f"https://github.com/{REPO}.git"
     print("clone anonimo: da para conferir tudo, menos enviar na ultima celula")
-subprocess.run(["git", "clone", "--quiet", url, DESTINO], check=True)
-subprocess.run(["git", "-C", DESTINO, "checkout", "--quiet", REF], check=True)
+
+# Sem --quiet, e com a saida de erro na tela: um clone que falha calado custa mais
+# tempo do que o ruido de um clone que fala.
+for cmd in (["git", "clone", url, DESTINO],
+            ["git", "-C", DESTINO, "checkout", REF]):
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode:
+        visivel = " ".join(cmd).replace(TOKEN.strip(), "***") if TOKEN else " ".join(cmd)
+        raise SystemExit(f"falhou: {visivel}\\n{r.stderr.strip()}")
 os.chdir(DESTINO)
 sys.path.insert(0, str(Path(DESTINO) / "src"))
 os.environ["PYTHONPATH"] = str(Path(DESTINO) / "src")
