@@ -236,24 +236,48 @@ def _classe_tabpfn_limitada():
     if _CLASSE_TABPFN is not None:
         return _CLASSE_TABPFN
 
+    import re
     import time
 
     from sklearn.base import BaseEstimator, RegressorMixin
 
     class _TabPFNRegressorLimitado(RegressorMixin, BaseEstimator):
-        def __init__(self, tentativas: int = 5, por_minuto: int = 50):
+        # Escada de espera para HTTP 429, em segundos. Nao e exponencial curta de
+        # proposito: a rodada que estourou estava a 26 chamadas por minuto, bem abaixo
+        # do teto de 60/min, e ainda assim recebeu 429 depois de cinco esperas de um
+        # minuto. Isso e cota de janela longa, horaria ou diaria, e contra ela cinco
+        # minutos de paciencia nao servem para nada. Somadas, estas esperas dao pouco
+        # mais de uma hora, que e o tempo de uma janela horaria se reabrir.
+        ESCADA = (60, 120, 300, 600, 900, 900, 900)
+
+        def __init__(self, tentativas: int = 7, por_minuto: int = 50):
             self.tentativas = tentativas
             self.por_minuto = por_minuto
+
+        @staticmethod
+        def _e_limite_de_taxa(exc) -> bool:
+            msg = str(exc).lower()
+            return "429" in msg or "too many requests" in msg or "rate limit" in msg
 
         def _com_retentativa(self, fn, limitador):
             for tentativa in range(1, self.tentativas + 1):
                 limitador.espera()
                 try:
                     return fn()
-                except Exception:
-                    if tentativa == self.tentativas:
+                except Exception as exc:
+                    # Erro que nao e de taxa sobe na hora: insistir num token invalido
+                    # ou numa serie malformada so gasta tempo e esconde a causa.
+                    if not self._e_limite_de_taxa(exc) or tentativa == self.tentativas:
                         raise
-                    time.sleep(2.0 ** tentativa)
+                    espera = self.ESCADA[min(tentativa - 1, len(self.ESCADA) - 1)]
+                    # O servidor sabe melhor que a escada quanto falta; se ele disser,
+                    # e o que vale.
+                    achado = re.search(r"retry-?after[^0-9]*(\d+)", str(exc).lower())
+                    if achado:
+                        espera = max(espera, float(achado.group(1)))
+                    print(f"[INFO] limite de taxa; esperando {espera / 60:.0f} min "
+                          f"(tentativa {tentativa}/{self.tentativas})", flush=True)
+                    time.sleep(espera + 1)
             raise RuntimeError("inalcançável")
 
         def fit(self, X, y):

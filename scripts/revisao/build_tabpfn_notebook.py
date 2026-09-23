@@ -328,12 +328,18 @@ THINKING = False #@param {type:"boolean"}
 # e montado aqui, em vez de recomendado num comentario que ninguem le antes de gastar
 # a hora.
 CHECKPOINT = "tabpfn_previsoes.csv"
-if MODO != "nao rodar":
-    try:
-        from google.colab import drive
-        drive.mount("/content/drive")
-    except Exception as e:
-        print(f"Drive nao montou ({type(e).__name__}: {e})")
+if MODO != "nao rodar" and not os.path.isdir("/content/drive/MyDrive"):
+    # force_remount resolve o "mount failed" mais comum, que e uma montagem anterior
+    # meio morta na mesma sessao. Duas tentativas, e segue sem Drive se nao der: sem
+    # Drive a rodada ainda e retomavel dentro da sessao, porque o checkpoint fica no
+    # disco dela. O que se perde e a sobrevivencia a uma queda de sessao.
+    for forcar in (False, True):
+        try:
+            from google.colab import drive
+            drive.mount("/content/drive", force_remount=forcar)
+            break
+        except Exception as e:
+            print(f"Drive nao montou (force_remount={forcar}): {type(e).__name__}: {e}")
 if os.path.isdir("/content/drive/MyDrive"):
     os.makedirs("/content/drive/MyDrive/tabpfn_cv", exist_ok=True)
     CHECKPOINT = "/content/drive/MyDrive/tabpfn_cv/tabpfn_previsoes.csv"
@@ -364,7 +370,15 @@ class LimitadorDeTaxa:
             time.sleep(atraso)
         self.ultima = time.time()
 
-def com_retentativa(fn, limitador, tentativas=5):
+# Escada de espera para o 429, em segundos. Nao e exponencial curta de proposito: a
+# rodada que estourou estava a 26 chamadas por minuto, abaixo do teto de 60/min, e
+# ainda assim levou 429 depois de cinco esperas de um minuto. Isso e cota de janela
+# longa, horaria ou diaria, e contra ela cinco minutos nao servem. Somadas, estas
+# esperas dao pouco mais de uma hora, que e o tempo de uma janela horaria reabrir.
+# Esperar nao custa API, e o checkpoint garante que o que ja rodou nao se repete.
+ESCADA = (60, 120, 300, 600, 900, 900, 900)
+
+def com_retentativa(fn, limitador, tentativas=len(ESCADA)):
     """Repete em HTTP 429 respeitando o Retry-After em vez de tentar as cegas."""
     for k in range(tentativas):
         limitador.espera()
@@ -374,11 +388,15 @@ def com_retentativa(fn, limitador, tentativas=5):
             msg = str(e)
             if "429" not in msg and "Too Many Requests" not in msg.lower():
                 raise
-            espera = 60.0
+            if k == tentativas - 1:
+                raise
+            espera = float(ESCADA[min(k, len(ESCADA) - 1)])
             m = re.search(r"[Rr]etry-?[Aa]fter[^0-9]*(\\d+)", msg)
             if m:
-                espera = float(m.group(1))
-            print(f"    429; esperando {espera:.0f}s (tentativa {k + 1}/{tentativas})")
+                espera = max(espera, float(m.group(1)))
+            print(f"    429; esperando {espera / 60:.0f} min "
+                  f"(tentativa {k + 1}/{tentativas}); o checkpoint esta salvo",
+                  flush=True)
             time.sleep(espera + 1)
     raise RuntimeError("limite de taxa persistente apos varias tentativas")
 

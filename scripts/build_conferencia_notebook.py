@@ -499,11 +499,17 @@ elif MODO != "nao rodar":
     # que cai no minuto 50 sem isto custa a hora inteira, e ja custou uma vez: foi
     # assim que a unica medicao por janela que existia se perdeu. Retomar e so rodar
     # esta celula de novo; as janelas ja feitas nao voltam para a API.
-    try:
-        from google.colab import drive
-        drive.mount("/content/drive")
-    except Exception as e:
-        print(f"  Drive nao montou ({e}); o checkpoint fica no disco da sessao")
+    # force_remount resolve o "mount failed" mais comum, que e uma montagem anterior
+    # meio morta na mesma sessao. Sem Drive a rodada ainda e retomavel dentro da
+    # sessao; o que se perde e a sobrevivencia a uma queda dela.
+    if not os.path.isdir("/content/drive/MyDrive"):
+        for forcar in (False, True):
+            try:
+                from google.colab import drive
+                drive.mount("/content/drive", force_remount=forcar)
+                break
+            except Exception as e:
+                print(f"  Drive nao montou (force_remount={forcar}): {e}")
     if os.path.isdir("/content/drive/MyDrive"):
         CHECKPOINT = "/content/drive/MyDrive/tabpfn_cv/checkpoint.csv"
     else:
