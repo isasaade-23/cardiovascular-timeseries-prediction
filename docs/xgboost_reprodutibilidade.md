@@ -158,6 +158,13 @@ avisos de `Non-invertible starting seasonal moving average` emitidos durante o a
 Confirmado que a causa não é o script novo: a própria classe `SarimaForecaster` do
 repositório, rodada sem alteração, produz a mesma divergência.
 
+**Resolvido em 2026-09-23.** A causa era a versão do statsmodels, não o otimizador. No
+`.venv` criado a partir dos requirements, com **statsmodels 0.15.0**, o SARIMA reproduz o
+guardado com divergência **0,0000**; a divergência de 0,013 pp aparecia no Python do sistema,
+que tinha 0.14.6. As duas janelas que caíam em ótimo local diferente eram efeito de versão,
+o mesmo mecanismo do XGBoost porém menor e agora fechado. A versão exata está em
+`requirements-lock.txt`.
+
 Efeito sobre o paper: o sMAPE do SARIMA passa de 4,7957 para 4,8086, ou seja, muda de 4,80
 para 4,81 no arredondamento da Tabela 1. Menor que a diferença entre XGBoost e o valor
 guardado, e sem efeito sobre a calibração, porque 101 das 103 janelas são as mesmas.
