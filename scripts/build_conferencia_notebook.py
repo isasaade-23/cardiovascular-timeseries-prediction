@@ -361,23 +361,17 @@ if MODO == "usar CSV ja pronto":
     print(f"  {ALVO} recebido")
 elif MODO != "nao rodar":
     !pip -q install tabpfn-client
-    token = os.environ.get("TABPFN_TOKEN")
+    # A chave vem dos Secrets do Colab, do segredo PRIOR_LABS_TOKEN. Nao ha prompt de
+    # digitacao aqui de proposito: chave digitada numa celula fica no notebook salvo.
+    # A biblioteca le a variavel TABPFN_TOKEN, entao o segredo alimenta a variavel.
+    from google.colab import userdata
+    token = userdata.get("PRIOR_LABS_TOKEN")
     if not token:
-        try:
-            from google.colab import userdata
-            for nome_segredo in ("PRIOR_LABS_TOKEN", "TABPFN_TOKEN"):
-                try:
-                    token = userdata.get(nome_segredo)
-                except Exception:
-                    token = None
-                if token:
-                    break
-        except Exception:
-            token = None
-    if not token:
-        from getpass import getpass
-        token = getpass("Token da PriorLabs: ")
+        raise SystemExit(
+            "Segredo PRIOR_LABS_TOKEN vazio ou sem acesso para este notebook. "
+            "No icone de chave da barra lateral, confira o valor e ligue o acesso.")
     os.environ["TABPFN_TOKEN"] = token.strip()
+    print(f"  chave lida dos Secrets, {len(os.environ['TABPFN_TOKEN'])} caracteres")
 
     # No modo de teste o horizonte e o minimo de treino ficam iguais; o que muda e o
     # tamanho da serie, cortada para dar poucas janelas. Um sMAPE de 5 janelas NAO se
