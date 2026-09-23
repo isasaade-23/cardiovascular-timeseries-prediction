@@ -18,9 +18,13 @@
 \usepackage{xcolor}
 \usepackage{caption}
 \usepackage{amsmath}
-% A legenda da fig4_janela usa \blacksquare, que vem daqui. Sem amssymb o
-% documento inteiro para de compilar, ainda que a figura isolada compile: o
-% preambulo que o gerador monta para compilar cada figura sozinha ja o carrega.
+% Tres legendas dependem daqui, nao uma: fig4_janela e revisao_fig_enriched_janela
+% usam \blacksquare, e revisao_fig_temp_diffcal usa \square. Sem amssymb o documento
+% inteiro para de compilar, ainda que a figura isolada compile: o preambulo que o
+% gerador monta para compilar cada figura sozinha ja o carrega.
+% Os tres simbolos saem dos geradores (build_paper_assets.py e
+% revisao/build_revisao_figs2.py), entao sobrevivem a qualquer regeneracao. Quem
+% cobra essa correspondencia e tests/test_latex_saudavel.py.
 \usepackage{amssymb}
 \usepackage[numbers,sort&compress]{natbib}
 

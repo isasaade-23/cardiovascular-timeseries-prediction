@@ -194,6 +194,98 @@ class CatBoostForecaster(_SkforecastRecursiveForecaster):
         return CatBoostRegressor(**params)
 
 
+class _LimitadorDeTaxa:
+    """Espera o mínimo para não passar de N chamadas por minuto.
+
+    A API da PriorLabs aceita 60 ajustes e 60 predições por minuto. Estourar o limite
+    devolve erro, não fila, e uma rodada de 103 janelas leva mais de uma hora: perder
+    tudo no minuto 50 por excesso de velocidade é caro. O teto usado é 50, com folga.
+    """
+
+    def __init__(self, por_minuto: int = 50):
+        self._intervalo = 60.0 / por_minuto
+        self._ultima = 0.0
+
+    def espera(self) -> None:
+        import time
+
+        agora = time.monotonic()
+        atraso = self._intervalo - (agora - self._ultima)
+        if atraso > 0:
+            time.sleep(atraso)
+        self._ultima = time.monotonic()
+
+
+class _TabPFNRegressorLimitado:
+    """Adapta o TabPFNRegressor da API ao contrato sklearn que o skforecast usa.
+
+    Duas coisas entram aqui e não no regressor original: o limitador de taxa e a
+    retentativa. Ambas são da via de rede, não do modelo, e por isso ficam fora do
+    protocolo: a sequência de janelas, os lags e a recursão continuam sendo os mesmos
+    que rodam o XGBoost e o CatBoost.
+    """
+
+    def __init__(self, tentativas: int = 5, **kwargs):
+        from tabpfn_client import TabPFNRegressor
+
+        self._modelo = TabPFNRegressor(**kwargs)
+        self._tentativas = tentativas
+        self._lim_fit = _LimitadorDeTaxa(50)
+        self._lim_pred = _LimitadorDeTaxa(50)
+
+    def _com_retentativa(self, fn, limitador):
+        import time
+
+        for tentativa in range(1, self._tentativas + 1):
+            limitador.espera()
+            try:
+                return fn()
+            except Exception:
+                if tentativa == self._tentativas:
+                    raise
+                time.sleep(2.0 ** tentativa)
+        raise RuntimeError("inalcançável")
+
+    def get_params(self, deep: bool = True):
+        return {"tentativas": self._tentativas}
+
+    def set_params(self, **params):
+        for k, v in params.items():
+            setattr(self, k, v)
+        return self
+
+    def fit(self, X, y):
+        self._com_retentativa(lambda: self._modelo.fit(X, y), self._lim_fit)
+        return self
+
+    def predict(self, X):
+        return self._com_retentativa(lambda: self._modelo.predict(X), self._lim_pred)
+
+
+class TabPFNForecaster(_SkforecastRecursiveForecaster):
+    """TabPFN pela API da PriorLabs, na mesma via recursiva dos dois boosters.
+
+    Existe para responder ao parecer sem trocar de bancada. Rodar o TabPFN por fora e
+    trazer só o sMAPE agregado foi o que deixou a afirmação sobre ele sem o teste
+    pareado que todas as outras afirmações do artigo têm: o critério pré-declarado
+    precisa da previsão janela a janela, e ela só é comparável se sair do mesmo
+    caminho que gerou as demais.
+
+    Requer `tabpfn_client` e o token em TABPFN_TOKEN. Custo de uma rodada completa:
+    103 ajustes e 618 predições na API, pouco mais de uma hora.
+    """
+
+    name = "tabpfn"
+    supports_exog = False       # a via da API não recebe exógena aqui
+
+    def __init__(self, lags: int = 12, **kwargs):
+        self.lags = lags
+        self._kwargs = kwargs
+
+    def _build_regressor(self):
+        return _TabPFNRegressorLimitado(**self._kwargs)
+
+
 class TimesFMForecaster(Forecaster):
     name = "timesfm"
 

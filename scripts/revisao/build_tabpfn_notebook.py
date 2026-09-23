@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from build_paper_assets import PAPER  # noqa: E402
+from nbtools import caderno, code, md, valida  # noqa: E402
 
 EXPERIMENTOS = Path(
     r"G:\.shortcut-targets-by-id\1zRZlDXqjBRVUlO0Zys2L0W69eJvgMI58\Labs"
@@ -62,26 +63,6 @@ def carrega_referencia() -> dict:
 
 
 # --------------------------------------------------------------------- celulas
-
-def fonte(txt: str) -> list[str]:
-    """Quebra em linhas MANTENDO o \\n de cada uma.
-
-    O nbformat manda que source seja o texto ja quebrado, e o Jupyter remonta com
-    ''.join(source), sem separador. Se as linhas vierem sem o \\n final, a celula
-    inteira colapsa numa linha so e o notebook nao roda. Foi exatamente esse o defeito
-    da primeira versao deste gerador.
-    """
-    return txt.strip("\n").splitlines(keepends=True)
-
-
-def md(txt):
-    return {"cell_type": "markdown", "metadata": {}, "source": fonte(txt)}
-
-
-def code(txt):
-    return {"cell_type": "code", "execution_count": None, "metadata": {},
-            "outputs": [], "source": fonte(txt)}
-
 
 CEL_INSTALA = '''
 # Instalacao. Leva alguns minutos. Se o Colab pedir para reiniciar o ambiente, reinicie
@@ -337,7 +318,19 @@ THINKING = False #@param {type:"boolean"}
 # THINKING melhora ate 15%, mas o limite cai para 10 fits/min e 30/h: mais de tres horas
 # e meia para as 103 janelas. So ligue sabendo disso.
 
+# O checkpoint no disco da sessao do Colab morre com a sessao, e uma rodada completa
+# custa mais de uma hora de API. Se o Drive estiver montado ele fica la, e uma queda de
+# sessao deixa de custar a rodada inteira. Foi assim que o CSV da rodada anterior se
+# perdeu, e com ele a unica medicao por janela que existia do TabPFN.
 CHECKPOINT = "tabpfn_previsoes.csv"
+if os.path.isdir("/content/drive/MyDrive"):
+    os.makedirs("/content/drive/MyDrive/tabpfn_cv", exist_ok=True)
+    CHECKPOINT = "/content/drive/MyDrive/tabpfn_cv/tabpfn_previsoes.csv"
+    print(f"checkpoint no Drive: {CHECKPOINT}")
+else:
+    print("Drive nao montado: o checkpoint fica no disco da sessao e morre com ela.")
+    print("Para montar: from google.colab import drive; drive.mount('/content/drive')")
+
 CONFIRMO_RODAR = MODO != "nao rodar"
 LIMITE_JANELAS = 5 if MODO.startswith("teste") else None
 
@@ -464,6 +457,31 @@ if CONFIRMO_RODAR:
         RESULTADOS["tabpfn"] = s
         print(f"\\n  tabpfn         sMAPE {s:.6f}"
               f"   ({n_janelas} janelas, {time.time() - t0:.0f}s)")
+
+        # O checkpoint guarda so `fim,h,y_pred`, que basta para retomar a rodada e nao
+        # basta para o teste pareado: analisa_variantes.py precisa de `y_true` e do
+        # indice de janela para montar a matriz 103x6. As duas colunas que faltam sao
+        # deterministicas a partir de SERIE e de rolling_origin_splits, entao isto e
+        # derivacao do que ja foi medido, nao medicao nova.
+        # Sem este arquivo a afirmacao sobre o TabPFN nao passa pelo criterio
+        # pre-declarado, e foi exatamente esse o item que ficou em aberto da vez passada.
+        linhas_pred = []
+        for w, (treino, teste, fim) in enumerate(rolling_origin_splits(SERIE), 1):
+            for h in range(1, HORIZONTE + 1):
+                linhas_pred.append({
+                    "model": "tabpfn", "window": w, "horizon": h,
+                    "date": f"{DATAS[fim + h - 1]:%Y-%m-%d}",
+                    "y_true": float(teste[h - 1]),
+                    "y_pred": float(yp_all[w - 1][h - 1]),
+                })
+        pred = pd.DataFrame(linhas_pred)
+        if len(pred) != n_janelas * HORIZONTE:
+            raise ValueError(
+                f"{len(pred)} linhas, esperado {n_janelas * HORIZONTE}")
+        pred.to_csv("tabpfn_predictions.csv", index=False)
+        print(f"  tabpfn_predictions.csv  {len(pred)} linhas "
+              f"({n_janelas} janelas x {HORIZONTE} horizontes)")
+        print("  Este arquivo vai para results/revisao/ no repositorio.")
 else:
     print("")
     print("=" * 68)
@@ -755,40 +773,23 @@ saida = {
 }
 with open("tabpfn_resultados.json", "w", encoding="utf-8") as f:
     json.dump(saida, f, indent=2, ensure_ascii=False)
-print("\\nEscrito tabpfn_resultados.json -- baixe e me devolva este arquivo.")
+print("\\nEscrito tabpfn_resultados.json.")
+# O JSON traz o agregado; o CSV traz a medicao por janela, que e do que o criterio
+# pre-declarado precisa. Os dois descem juntos, porque foi a falta do segundo que
+# deixou o item em aberto da ultima vez.
+para_baixar = ["tabpfn_resultados.json"]
+if os.path.exists("tabpfn_predictions.csv"):
+    para_baixar.append("tabpfn_predictions.csv")
+else:
+    print("AVISO: tabpfn_predictions.csv nao existe. Sem ele o teste pareado nao roda.")
+print("Baixe: " + ", ".join(para_baixar))
 try:
     from google.colab import files
-    files.download("tabpfn_resultados.json")
+    for _f in para_baixar:
+        files.download(_f)
 except Exception:
     pass
 '''
-
-
-def valida(nb) -> None:
-    """Remonta cada celula COMO O JUPYTER remonta e compila o Python resultante.
-
-    A checagem tem de partir de ''.join(source), nao de '\\n'.join(source): foi por
-    testar a segunda forma que a primeira versao deste gerador passou num notebook em
-    que toda celula colapsava numa linha unica no Colab.
-    """
-    for i, c in enumerate(nb["cells"]):
-        texto = "".join(c["source"])
-        if c["cell_type"] != "code":
-            continue
-        if len(c["source"]) > 1 and "\n" not in texto:
-            raise ValueError(f"celula {i}: linhas sem quebra, colapsaria no Jupyter")
-        # Linhas de shell (!pip) nao sao Python; viram no-op so para o compile. A
-        # indentacao tem de ser preservada, senao um "!pip" dentro de um if vira erro
-        # de bloco -- no IPython ele funciona, virando get_ipython().system(...).
-        limpo = "\n".join(
-            (l[:len(l) - len(l.lstrip())] + "pass") if l.lstrip().startswith("!") else l
-            for l in texto.split("\n"))
-        try:
-            compile(limpo, f"<celula {i}>", "exec")
-        except SyntaxError as e:
-            raise ValueError(f"celula {i}: {e}") from e
-    print(f"  validadas {sum(1 for c in nb['cells'] if c['cell_type'] == 'code')} "
-          "celulas de codigo")
 
 
 def main() -> int:
@@ -863,16 +864,7 @@ reproduzido aqui de proposito -- ele e um limite superior, nao um resultado.
         code(CEL_FINAL),
     ]
 
-    nb = {
-        "cells": celulas,
-        "metadata": {
-            "colab": {"provenance": [], "toc_visible": True},
-            "kernelspec": {"display_name": "Python 3", "name": "python3"},
-            "language_info": {"name": "python"},
-        },
-        "nbformat": 4,
-        "nbformat_minor": 0,
-    }
+    nb = caderno(celulas)
     valida(nb)
     SAIDA.write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"  notebook  {SAIDA.name}  ({len(celulas)} celulas, "

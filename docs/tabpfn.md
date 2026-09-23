@@ -1,7 +1,7 @@
 # TabPFN: o que está verificado e o que não está
 
-Autoria da rodada: **Isabella Saade** (isasaade23@gmail.com), `tabpfn_benchmark.ipynb`,
-setembro de 2026. Resultado versionado em `results/revisao/tabpfn_resultados_v4.json`.
+Rodada de setembro de 2026, por `tabpfn_benchmark.ipynb`. Resultado versionado em
+`results/revisao/tabpfn_resultados_v4.json`.
 
 ## Por que existe
 
@@ -66,6 +66,32 @@ suporte que todas as outras do paper.
 
 Enquanto isso, o manuscrito reporta o número e declara que o teste pareado está pendente,
 em vez de afirmar a vitória.
+
+### Como produzir esse CSV
+
+O checkpoint da rodada de setembro não sobreviveu à sessão do Colab, e com ele se perdeu
+a única medição por janela que existia. A rodada nova sai pelo mesmo caminho que gerou
+todas as outras linhas do artigo, e não por fora dele:
+
+```
+python scripts/run_benchmark.py \
+    --input-csv results/series/serie_eventos_sp_sim_real_2010_2023.csv \
+    --models tabpfn --horizon 6 --min-train-size 60 \
+    --output-prefix results/revisao/tabpfn
+```
+
+`TabPFNForecaster` usa a mesma via recursiva do XGBoost e do CatBoost; o limitador de
+taxa e a retentativa ficam em volta da chamada de rede, sem tocar no protocolo. Requer
+`tabpfn_client` e o token em `TABPFN_TOKEN`. Custo: 103 ajustes e 618 predições na API.
+
+`notebooks/conferencia_regeneracao.ipynb` roda isso no Colab e já aplica o teste pareado
+em seguida. Duas cautelas que vêm da vez passada: montar o Drive, para que uma queda de
+sessão não custe a hora de API outra vez, e rodar primeiro em modo de teste, que gasta
+cinco janelas para provar que a chave funciona.
+
+O número que sair daí não é necessariamente 6,035. A rodada de setembro usou uma porta
+autossuficiente do protocolo, e a nova usa o `skforecast` do repositório; as duas foram
+feitas para coincidir, e se divergirem a divergência é resultado, não erro de digitação.
 
 ## O que não entrou
 

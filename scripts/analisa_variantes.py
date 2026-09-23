@@ -24,6 +24,13 @@ RES = ROOT / "results"
 VAR = RES / "revisao" / "variants_predictions.csv"
 BASE = RES / "benchmark_baselines_2010_2023_predictions.csv"
 BENCH = RES / "benchmark_sim_real_sp_2010_2023_predictions.csv"
+# Previsoes que chegam de fora do pipeline local, uma linha por janela e horizonte, no
+# mesmo formato dos demais. Hoje e so o TabPFN, que roda por API e nao aqui. Entra como
+# arquivo opcional para que a ausencia dele nao quebre a rodada de quem nao o tem, e
+# para que a presenca dele nao mude nada dos outros modelos: mesmas janelas, mesma
+# semente, mesmo bootstrap.
+EXTRA = sorted((RES / "revisao").glob("*_predictions_externas.csv")) + [
+    RES / "revisao" / "tabpfn_predictions.csv"]
 
 B = 10_000
 SEED = 20260817
@@ -71,8 +78,18 @@ def main() -> int:
         str(RES / "series" / "serie_eventos_sp_sim_real_2010_2023.csv"), "date", "value", "MS")
     den = mase_denominador(serie, m=12)
 
-    todos = pd.concat([var, base, bench], ignore_index=True)
-    nomes = sorted(var.model.unique()) + [REF, "snaive_drift", "naive"]
+    quadros = [var, base, bench]
+    externos = []
+    for p in EXTRA:
+        if not p.exists():
+            continue
+        d = pd.read_csv(p)
+        quadros.append(d)
+        externos += sorted(d.model.unique())
+        print(f"  {p.name}: {len(d)} linhas, modelos {sorted(d.model.unique())}")
+
+    todos = pd.concat(quadros, ignore_index=True)
+    nomes = sorted(var.model.unique()) + externos + [REF, "snaive_drift", "naive"]
 
     ae, sm = {}, {}
     for m in nomes:

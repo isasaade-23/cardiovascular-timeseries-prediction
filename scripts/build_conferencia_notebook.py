@@ -1,0 +1,648 @@
+#!/usr/bin/env python3
+"""Gera o notebook do Colab que confere a regeneracao do XGBoost de ponta a ponta.
+
+Por que um notebook e nao um script: as quatro conferencias precisam do ambiente do
+lock, e a maquina de quem confere nao e a maquina que rodou. O Colab da um ambiente
+limpo a cada execucao, que e a condicao que faltava da ultima vez -- a divergencia do
+SARIMA que passou meses atribuida a otimo local do otimizador era versao de biblioteca.
+
+Por que gerar em vez de escrever a mao: os numeros que o notebook compara vem das
+fontes do repositorio, nao de digitacao. O gerador injeta os caminhos e as referencias;
+o notebook le tudo do clone que ele mesmo faz.
+
+O que o notebook confere:
+    1. simbolos de LaTeX que a regeneracao de figuras trocou, e o pacote que eles exigem
+    2. de que par sao as colunas de IC e DM da tabela de variantes
+    3. se a rodada de calibracao versionada reproduz sob semente fixa
+    4. o teste pareado do TabPFN, que exige a previsao janela a janela
+    5. a conferencia geral: testes, assets regerados e diff do paper
+
+Saida:
+    notebooks/conferencia_regeneracao.ipynb
+
+Uso:
+    python scripts/build_conferencia_notebook.py
+"""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from nbtools import caderno, code, md, valida  # noqa: E402
+
+SAIDA = ROOT / "notebooks" / "conferencia_regeneracao.ipynb"
+
+# A regeneracao a conferir, e a arvore anterior a branch, que serve de "antes" para o
+# inventario de simbolos.
+REF_DEPOIS = "e829dc2"
+REF_ANTES_BRANCH = "627a924"
+REF_ANTES_REGEN = "792fe6c"
+
+SERIE_CSV = "results/series/serie_eventos_sp_sim_real_2010_2023.csv"
+
+
+# --------------------------------------------------------------------- celulas
+
+CEL_SETUP = '''
+# Clona o repositorio e entra no commit que se quer conferir. O token vem dos Secrets
+# do Colab (icone de chave na barra lateral), num segredo chamado GITHUB_TOKEN, e nao
+# colado numa celula: o notebook fica salvo com o que estiver escrito nele.
+import os, subprocess, sys, json, re, shutil
+from pathlib import Path
+
+REPO = "fabianofilho/cardiovascular-timeseries-prediction"  #@param {type:"string"}
+REF = "e829dc2"  #@param {type:"string"}
+DESTINO = "/content/repo"
+
+TOKEN = os.environ.get("GITHUB_TOKEN")
+if not TOKEN:
+    try:
+        from google.colab import userdata
+        TOKEN = userdata.get("GITHUB_TOKEN")
+    except Exception:
+        TOKEN = None
+if not TOKEN:
+    from getpass import getpass
+    TOKEN = getpass("Token do GitHub com acesso de leitura ao repositorio: ")
+TOKEN = TOKEN.strip()
+
+if Path(DESTINO).exists():
+    shutil.rmtree(DESTINO)
+url = f"https://x-access-token:{TOKEN}@github.com/{REPO}.git"
+subprocess.run(["git", "clone", "--quiet", url, DESTINO], check=True)
+subprocess.run(["git", "-C", DESTINO, "checkout", "--quiet", REF], check=True)
+os.chdir(DESTINO)
+sys.path.insert(0, str(Path(DESTINO) / "src"))
+os.environ["PYTHONPATH"] = str(Path(DESTINO) / "src")
+
+sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                     capture_output=True, text=True).stdout.strip()
+print(f"repositorio em {DESTINO}, HEAD {sha}")
+
+# VEREDITOS acumula o resultado de cada secao. A ultima celula escreve o relatorio a
+# partir daqui, para que o texto nao possa discordar do que as celulas mediram.
+VEREDITOS = {}
+'''
+
+CEL_AMBIENTE = '''
+# Instala o ambiente fixado. Demora, e e o ponto do exercicio: e o statsmodels 0.15.0
+# que faz o SARIMA reproduzir; com 0.14.6 ele diverge em duas das 103 janelas.
+!pip -q install -r requirements-lock.txt 2>&1 | tail -5
+print("instalacao terminada")
+'''
+
+CEL_VERSOES = '''
+# Confere o que ficou instalado contra o que o lock pede. Divergencia aqui explica
+# divergencia numerica mais adiante, e e a primeira coisa a olhar quando um numero nao
+# bate -- foi o que aconteceu com o XGBoost por sete versoes seguidas.
+import importlib.metadata as md_
+
+lock = {}
+for linha in Path("requirements-lock.txt").read_text(encoding="utf-8").splitlines():
+    linha = linha.split("#")[0].strip()
+    if "==" in linha:
+        nome, versao = linha.split("==", 1)
+        lock[nome.strip().lower()] = versao.strip()
+
+IMPORTA = ["statsmodels", "xgboost", "catboost", "prophet", "numpy", "pandas",
+           "scikit-learn", "scipy", "skforecast"]
+divergentes = {}
+print(f"  {'pacote':<16}{'instalado':>12}{'no lock':>12}")
+for nome in IMPORTA:
+    try:
+        posta = md_.version(nome)
+    except md_.PackageNotFoundError:
+        posta = "ausente"
+    quer = lock.get(nome.lower(), "-")
+    marca = "" if posta == quer else "   <-"
+    if posta != quer:
+        divergentes[nome] = (posta, quer)
+    print(f"  {nome:<16}{posta:>12}{quer:>12}{marca}")
+
+VEREDITOS["ambiente"] = {
+    "divergentes": divergentes,
+    "conclusao": ("ambiente igual ao lock" if not divergentes else
+                  f"{len(divergentes)} pacote(s) fora do lock: {sorted(divergentes)}"),
+}
+print("\\n  " + VEREDITOS["ambiente"]["conclusao"])
+'''
+
+CEL_SIMBOLOS = '''
+# SECAO 1 -- simbolos de LaTeX
+#
+# A pergunta e se a regeneracao das figuras trocou simbolos alem do \\blacksquare que
+# ja foi corrigido. O metodo e inventario, nao leitura: extrai todo comando em modo
+# matematico de cada .tex, nas duas arvores, e compara.
+MATH = re.compile(r"\\$([^$]*)\\$")
+CMD = re.compile(r"\\\\([a-zA-Z]+)")
+
+def sem_comentario(texto):
+    saida = []
+    for linha in texto.split("\\n"):
+        m = re.search(r"(?<!\\\\)%", linha)
+        saida.append(linha[:m.start()] if m else linha)
+    return "\\n".join(saida)
+
+def inventario(ref):
+    """Comando em modo matematico -> arquivos que o usam, na arvore de `ref`."""
+    listagem = subprocess.run(["git", "ls-tree", "-r", "--name-only", ref],
+                              capture_output=True, text=True, check=True).stdout
+    achados = {}
+    for caminho in listagem.splitlines():
+        if not (caminho.startswith("paper/") and caminho.endswith(".tex")):
+            continue
+        texto = subprocess.run(["git", "show", f"{ref}:{caminho}"],
+                               capture_output=True, text=True, check=True).stdout
+        for trecho in MATH.findall(sem_comentario(texto)):
+            for cmd in CMD.findall(trecho):
+                achados.setdefault(cmd, set()).add(caminho.split("/")[-1])
+    return achados
+
+ANTES, DEPOIS = "627a924", "e829dc2"
+antes, depois = inventario(ANTES), inventario(DEPOIS)
+
+print(f"  arvore anterior a branch ({ANTES}):")
+for cmd in sorted(antes):
+    print(f"    \\\\{cmd:<14} {sorted(antes[cmd])}")
+print(f"\\n  arvore atual ({DEPOIS}):")
+for cmd in sorted(depois):
+    print(f"    \\\\{cmd:<14} {sorted(depois[cmd])}")
+
+entraram = sorted(set(depois) - set(antes))
+sairam = sorted(set(antes) - set(depois))
+print(f"\\n  entraram com a regeneracao: {entraram or 'nenhum'}")
+print(f"  sairam: {sairam or 'nenhum'}")
+'''
+
+CEL_SIMBOLOS_PACOTE = '''
+# Cada simbolo que entrou exige pacote? E o preambulo carrega esse pacote?
+DE_PACOTE = {"blacksquare": "amssymb", "square": "amssymb", "checkmark": "amssymb",
+             "blacktriangle": "amssymb", "lozenge": "amssymb", "leqslant": "amssymb",
+             "geqslant": "amssymb", "boldsymbol": "amsmath", "dfrac": "amsmath"}
+
+preambulo = Path("paper/preamble.tex").read_text(encoding="utf-8")
+pacotes = set(re.findall(r"\\\\usepackage(?:\\[[^\\]]*\\])?\\{([^}]+)\\}",
+                         sem_comentario(preambulo)))
+
+exigem, faltando = {}, {}
+for cmd, arquivos in depois.items():
+    pacote = DE_PACOTE.get(cmd)
+    if not pacote:
+        continue
+    exigem[cmd] = (pacote, sorted(arquivos))
+    if pacote not in pacotes:
+        faltando[cmd] = pacote
+
+print("  simbolos que exigem pacote, na arvore atual:")
+for cmd, (pacote, arquivos) in sorted(exigem.items()):
+    print(f"    \\\\{cmd:<14} {pacote:<10} {arquivos}")
+print(f"\\n  pacotes no preambulo: {sorted(pacotes)}")
+print(f"  sem o pacote correspondente: {faltando or 'nenhum'}")
+
+arquivos_dependentes = sorted({a for _, arqs in exigem.values() for a in arqs})
+VEREDITOS["simbolos"] = {
+    "entraram_com_a_regeneracao": entraram,
+    "exigem_pacote": {k: v[0] for k, v in exigem.items()},
+    "arquivos_dependentes": arquivos_dependentes,
+    "sem_pacote": faltando,
+    "conclusao": (
+        f"{len(arquivos_dependentes)} arquivo(s) dependem de pacote de simbolo "
+        f"({', '.join(arquivos_dependentes)}); "
+        + ("todos com o pacote carregado" if not faltando
+           else f"SEM o pacote: {faltando}")),
+}
+print("\\n  " + VEREDITOS["simbolos"]["conclusao"])
+'''
+
+CEL_SIMBOLOS_TESTE = '''
+# O inventario acima e uma foto. O teste e o que impede a proxima regeneracao de trocar
+# um simbolo sem ninguem ver: ele reprova simbolo de pacote sem pacote, e reprova
+# tambem simbolo nao catalogado, que e como um simbolo novo entra sem decisao.
+!python -m pytest tests/test_latex_saudavel.py -q 2>&1 | tail -5
+'''
+
+CEL_TAB7 = '''
+# SECAO 2 -- de que par sao as colunas de IC e DM da tabela de variantes
+#
+# Na regeneracao, os pontos do XGBoost na tabela mudaram e as colunas de IC e DM
+# ficaram identicas. Ou a tabela ficou com numero velho, ou essas colunas nunca foram
+# do XGBoost. A resposta esta no gerador, nao na memoria de ninguem.
+gerador = Path("scripts/build_paper_assets.py").read_text(encoding="utf-8")
+bloco = gerador[gerador.index("Tabela 7"):]
+bloco = bloco[:bloco.index("escreve_tabela")]
+linhas_fonte = [l for l in bloco.split("\\n")
+                if "ic_low" in l or "dm_significativos" in l or "vj[" in l]
+print("  o que o gerador poe nessas duas colunas:")
+for l in linhas_fonte:
+    print("   ", l.strip())
+
+vj = json.loads(Path("results/revisao/variants_vs_snaive.json").read_text(encoding="utf-8"))
+tex = Path("paper/tables/tab7_variantes.tex").read_text(encoding="utf-8")
+
+print("\\n  IC e DM de cada modelo, medidos, para a variante base:")
+for m in ("catboost_base", "xgboost_base"):
+    d = vj["modelos"][m]
+    print(f"    {m:<16} [{d['ic_low']:+.2f}, {d['ic_high']:+.2f}]  "
+          f"{d['dm_significativos']}/6")
+
+na_tabela = re.search(r"Lags only \\(as reported\\).*", tex).group(0)
+print(f"\\n  a linha na tabela: {na_tabela.strip()}")
+
+do_catboost = f"[{vj['modelos']['catboost_base']['ic_low']:+.2f}, "\\
+              f"{vj['modelos']['catboost_base']['ic_high']:+.2f}]"
+casa_catboost = do_catboost in na_tabela
+VEREDITOS["tab7"] = {
+    "coluna_e_do_par": "catboost vs snaive" if casa_catboost else "indeterminado",
+    "ic_catboost_base": do_catboost,
+    "confere": bool(casa_catboost),
+    "conclusao": (
+        "as colunas de IC e DM sao do par CatBoost contra naive sazonal, como o "
+        "cabecalho e a legenda ja dizem. Nao envolvem o XGBoost, entao regenerar o "
+        "XGBoost nao devia move-las: a tabela esta certa."
+        if casa_catboost else
+        "o IC da tabela nao casa com o do CatBoost medido. Regerar os assets e "
+        "comparar de novo antes de qualquer conclusao."),
+}
+print("\\n  " + VEREDITOS["tab7"]["conclusao"])
+'''
+
+CEL_CALIBRACAO = '''
+# SECAO 3 -- qual rodada de calibracao e canonica
+#
+# O script ja semeia. Se a rodada versionada reproduzir sob a semente, ela e a
+# canonica e o item fecha. Se nao reproduzir, a semeada passa a ser, e a figura e a
+# tabela que dependem dela tem de ser regeradas da mesma rodada.
+import pandas as pd
+
+VERS_CSV = Path("results/calibracao_2010_2023_predictions.csv")
+VERS_JSON = Path("results/calibracao_2010_2023_metrics.json")
+guardado_csv = pd.read_csv(VERS_CSV)
+guardado_json = json.loads(VERS_JSON.read_text(encoding="utf-8"))
+
+!python scripts/run_calibracao.py 2>&1 | tail -12
+
+novo_csv = pd.read_csv(VERS_CSV)
+novo_json = json.loads(VERS_JSON.read_text(encoding="utf-8"))
+'''
+
+CEL_CALIBRACAO_DIFF = '''
+# Comparacao numerica, coluna a coluna. Hash de arquivo nao serve: um numero que muda
+# na quinta casa e uma coisa, uma coluna inteira deslocada e outra, e as duas dao hash
+# diferente.
+assert list(guardado_csv.columns) == list(novo_csv.columns), "colunas mudaram"
+assert len(guardado_csv) == len(novo_csv), "numero de linhas mudou"
+
+maximos = {}
+for col in guardado_csv.columns:
+    if guardado_csv[col].dtype.kind not in "fi":
+        iguais = bool((guardado_csv[col] == novo_csv[col]).all())
+        maximos[col] = 0.0 if iguais else float("nan")
+        continue
+    maximos[col] = float((guardado_csv[col] - novo_csv[col]).abs().max())
+
+print(f"  {'coluna':<14}{'maior diferenca absoluta':>26}")
+for col, v in maximos.items():
+    print(f"  {col:<14}{v:>26.6f}")
+
+pontuais = [c for c in ("y_pred", "y_true") if c in maximos]
+bandas = [c for c in ("lower", "upper", "lo", "hi") if c in maximos]
+reproduz = all(v == 0.0 for v in maximos.values())
+
+VEREDITOS["calibracao"] = {
+    "reproduz_byte_a_byte": bool(reproduz),
+    "maior_diferenca_por_coluna": maximos,
+    "picp_guardado": {m: guardado_json.get(m, {}).get("picp")
+                      for m in ("sarima", "prophet") if m in guardado_json},
+    "picp_novo": {m: novo_json.get(m, {}).get("picp")
+                  for m in ("sarima", "prophet") if m in novo_json},
+    "conclusao": (
+        "a rodada versionada reproduz sob a semente fixa: ela e a canonica, e o que "
+        "faltava era declarar isso."
+        if reproduz else
+        "a rodada versionada nao reproduz. A rodada semeada passa a ser a canonica, e "
+        "a figura de calibracao e a tabela 6 saem dela, da mesma fonte."),
+}
+print("\\n  " + VEREDITOS["calibracao"]["conclusao"])
+'''
+
+CEL_TABPFN_MODO = '''
+# SECAO 4 -- TabPFN por janela
+#
+# O que falta nao e o numero agregado, que ja existe: e a previsao janela a janela, sem
+# a qual o criterio pre-declarado (intervalo de bootstrap pareado excluindo zero E
+# Diebold-Mariano p<0,05 em ao menos 3 de 6 horizontes) nao pode ser calculado.
+#
+# A rodada sai pelo mesmo caminho que gerou todas as outras linhas do artigo:
+# run_benchmark.py com o forecaster que usa a via recursiva dos boosters. Rodar por
+# fora e trazer so o agregado foi o que deixou este item em aberto.
+#
+# Custo da rodada completa: 103 ajustes e 618 predicoes na API, pouco mais de uma hora.
+
+MODO = "nao rodar"  #@param ["nao rodar", "teste (5 janelas)", "completo (103 janelas)", "usar CSV ja pronto"]
+
+ALVO = Path("results/revisao/tabpfn_predictions.csv")
+
+if MODO == "usar CSV ja pronto":
+    from google.colab import files
+    print("Envie o CSV com colunas model,window,horizon,date,y_true,y_pred")
+    enviados = files.upload()
+    nome = list(enviados)[0]
+    ALVO.parent.mkdir(parents=True, exist_ok=True)
+    Path(nome).replace(ALVO)
+    print(f"  {ALVO} recebido")
+elif MODO != "nao rodar":
+    !pip -q install tabpfn-client
+    token = os.environ.get("TABPFN_TOKEN")
+    if not token:
+        try:
+            from google.colab import userdata
+            for nome_segredo in ("PRIOR_LABS_TOKEN", "TABPFN_TOKEN"):
+                try:
+                    token = userdata.get(nome_segredo)
+                except Exception:
+                    token = None
+                if token:
+                    break
+        except Exception:
+            token = None
+    if not token:
+        from getpass import getpass
+        token = getpass("Token da PriorLabs: ")
+    os.environ["TABPFN_TOKEN"] = token.strip()
+
+    # No modo de teste o horizonte e o minimo de treino ficam iguais; o que muda e o
+    # tamanho da serie, cortada para dar poucas janelas. Um sMAPE de 5 janelas NAO se
+    # compara com o das 103, e por isso ele nao entra em lugar nenhum: serve para
+    # provar que a chave e a via funcionam antes de gastar a hora.
+    entrada = "SERIE_CSV_PLACEHOLDER"
+    if MODO.startswith("teste"):
+        import pandas as pd
+        d = pd.read_csv(entrada).head(71)
+        entrada = "/content/serie_teste.csv"
+        d.to_csv(entrada, index=False)
+        print(f"  modo de teste: {len(d)} meses, {len(d) - 60 - 6 + 1} janelas")
+
+    !python scripts/run_benchmark.py --input-csv "$entrada" --models tabpfn --horizon 6 --min-train-size 60 --output-prefix results/revisao/tabpfn 2>&1 | tail -15
+else:
+    print("Nada a rodar. Para produzir o CSV, troque MODO acima.")
+    print("Sem ele a secao seguinte pula o TabPFN e o item continua em aberto.")
+
+print(f"\\n  CSV presente: {ALVO.exists()}")
+'''
+
+CEL_TABPFN_TESTE = '''
+# O teste pareado. Roda para todo mundo de uma vez, com as MESMAS janelas reamostradas
+# e a mesma semente: e o que torna os intervalos comparaveis entre si.
+!python scripts/analisa_variantes.py 2>&1 | tail -30
+'''
+
+CEL_TABPFN_VEREDITO = '''
+# Veredito do TabPFN contra as duas referencias ingenuas que importam. O criterio do
+# artigo compara com o naive sazonal; a afirmacao que ficou em aberto era mais forte,
+# de bater as referencias ingenuas, entao o naive sazonal com drift entra tambem.
+import numpy as np
+sys.path.insert(0, "scripts")
+from analisa_variantes import dm_test, smape_vec, matriz, B, SEED
+
+if not ALVO.exists():
+    VEREDITOS["tabpfn"] = {
+        "conclusao": "sem CSV por janela, o criterio pre-declarado continua nao "
+                     "calculavel e a afirmacao segue sem lastro. Item em aberto."}
+    print("  " + VEREDITOS["tabpfn"]["conclusao"])
+else:
+    import pandas as pd
+    todos = pd.concat([
+        pd.read_csv("results/revisao/variants_predictions.csv"),
+        pd.read_csv("results/benchmark_baselines_2010_2023_predictions.csv"),
+        pd.read_csv("results/benchmark_sim_real_sp_2010_2023_predictions.csv"),
+        pd.read_csv(ALVO)], ignore_index=True)
+
+    sm, ae = {}, {}
+    for m in ("tabpfn", "snaive", "snaive_drift", "naive", "catboost_direct"):
+        try:
+            yt, yp = matriz(todos, m)
+        except Exception as e:
+            print(f"  {m}: {e}")
+            continue
+        sm[m], ae[m] = smape_vec(yt, yp), np.abs(yp - yt)
+
+    rng = np.random.default_rng(SEED)
+    nw = sm["snaive"].shape[0]
+    idx = rng.integers(0, nw, size=(B, nw))
+
+    resultado = {}
+    for ref in ("snaive", "snaive_drift", "naive"):
+        if "tabpfn" not in sm or ref not in sm:
+            continue
+        dif = sm["tabpfn"][idx].mean(axis=(1, 2)) - sm[ref][idx].mean(axis=(1, 2))
+        lo, hi = np.percentile(dif, [2.5, 97.5])
+        sig = 0
+        for h in range(6):
+            _, p = dm_test(ae["tabpfn"][:, h] - ae[ref][:, h], h + 1)
+            if p == p and p < 0.05:
+                sig += 1
+        passa = bool(hi < 0 and sig >= 3)
+        resultado[ref] = {"delta_pp": float(sm["tabpfn"].mean() - sm[ref].mean()),
+                          "ic": [float(lo), float(hi)], "dm": f"{sig}/6",
+                          "atende_criterio": passa}
+        print(f"  tabpfn vs {ref:<14} delta {resultado[ref]['delta_pp']:+.4f} pp   "
+              f"IC [{lo:+.3f}, {hi:+.3f}]   DM {sig}/6   "
+              f"{'ATENDE' if passa else 'nao atende'}")
+
+    atende = [r for r, d in resultado.items() if d["atende_criterio"]]
+    VEREDITOS["tabpfn"] = {
+        "smape": float(sm["tabpfn"].mean()),
+        "por_referencia": resultado,
+        "conclusao": (
+            f"o TabPFN atende o criterio pre-declarado contra {', '.join(atende)}."
+            if atende else
+            "o TabPFN nao atende o criterio pre-declarado contra nenhuma das "
+            "referencias ingenuas. O que se pode afirmar e que ele e o melhor modelo "
+            "tabular testado, nao que ele bate uma regra sem modelo."),
+    }
+    print("\\n  " + VEREDITOS["tabpfn"]["conclusao"])
+'''
+
+CEL_CONFERENCIA = '''
+# SECAO 5 -- conferencia geral
+#
+# Testes primeiro. Se algum falhar aqui e nao falhar por causa de alguma secao acima,
+# e achado: o main estaria quebrado desde antes.
+!python -m pytest -q 2>&1 | tail -15
+'''
+
+CEL_CONFERENCIA_ASSETS = '''
+# Regera os assets e olha o diff. Tabela ou figura que mude sem que uma das secoes
+# acima explique a mudanca e achado, nao ruido. O inverso tambem vale: nenhuma
+# mudanca depois de uma regeneracao aplicada quer dizer que ela nao chegou ao paper.
+!python scripts/build_paper_assets.py 2>&1 | tail -8
+print("\\n  diff em paper/ depois de regerar:")
+!git diff --stat -- paper/ | tail -20
+
+diff = subprocess.run(["git", "diff", "--name-only", "--", "paper/"],
+                      capture_output=True, text=True).stdout.split()
+VEREDITOS["assets"] = {
+    "arquivos_com_diff": diff,
+    "conclusao": ("regerar os assets nao move nada no paper: o que esta versionado e o "
+                  "que a fonte produz." if not diff else
+                  f"regerar move {len(diff)} arquivo(s): {diff}. Cada um precisa de "
+                  "explicacao antes de ser commitado."),
+}
+print("\\n  " + VEREDITOS["assets"]["conclusao"])
+'''
+
+CEL_CONFERENCIA_ABERTOS = '''
+# O que o manuscrito ainda declara em aberto. Sao marcas deliberadas: valem como lista
+# de pendencias, e nao como defeito.
+texto = Path("paper/manuscript.tex").read_text(encoding="utf-8")
+abertos = re.findall(r"\\\\(?:missing|aberto)\\{([^}]{0,120})", texto)
+print(f"  {len(abertos)} marca(s) em aberto no manuscrito:")
+for a in abertos:
+    print("   -", " ".join(a.split())[:100])
+VEREDITOS["abertos_no_manuscrito"] = [" ".join(a.split())[:100] for a in abertos]
+'''
+
+CEL_RELATORIO = '''
+# SECAO 6 -- relatorio
+#
+# Escrito a partir de VEREDITOS, nao redigido a mao: o texto nao pode discordar do que
+# as celulas mediram. Sai em docs/, junto com o JSON que lhe da lastro.
+from datetime import date
+
+ORDEM = [("ambiente", "Ambiente"), ("simbolos", "Simbolos de LaTeX"),
+         ("tab7", "Colunas de IC e DM da tabela de variantes"),
+         ("calibracao", "Rodada de calibracao canonica"),
+         ("tabpfn", "TabPFN por janela"), ("assets", "Assets regerados")]
+
+linhas = [f"# Conferencia da regeneracao do XGBoost (REF_ANTES_REGEN_PLACEHOLDER..{REF})",
+          "",
+          f"Rodado em {date.today():%d/%m/%Y}, em ambiente limpo, a partir do "
+          f"commit `{sha}`.", "",
+          "Cada veredito abaixo sai de uma medicao deste notebook, "
+          "`notebooks/conferencia_regeneracao.ipynb`. O JSON ao lado guarda os numeros.",
+          ""]
+for chave, titulo in ORDEM:
+    d = VEREDITOS.get(chave)
+    if not d:
+        continue
+    linhas += [f"## {titulo}", "", d.get("conclusao", "sem conclusao registrada"), ""]
+
+if VEREDITOS.get("abertos_no_manuscrito"):
+    linhas += ["## Marcas ainda abertas no manuscrito", ""]
+    linhas += [f"- {a}" for a in VEREDITOS["abertos_no_manuscrito"]] + [""]
+
+Path("docs").mkdir(exist_ok=True)
+Path("docs/conferencia_regeneracao.md").write_text("\\n".join(linhas), encoding="utf-8")
+Path("results/conferencia").mkdir(parents=True, exist_ok=True)
+Path("results/conferencia/vereditos.json").write_text(
+    json.dumps(VEREDITOS, indent=2, ensure_ascii=False, default=str) + "\\n",
+    encoding="utf-8")
+
+print("\\n".join(linhas))
+print("\\n  docs/conferencia_regeneracao.md")
+print("  results/conferencia/vereditos.json")
+'''
+
+CEL_COMMIT = '''
+# Commit e push numa branch propria. Nada aqui vai para o main direto: o que este
+# notebook produz e evidencia, e evidencia entra por revisao como o resto.
+BRANCH = "conferencia-regeneracao"  #@param {type:"string"}
+ENVIAR = False  #@param {type:"boolean"}
+
+if ENVIAR:
+    !git config user.email "$(git log -1 --format=%ae)"
+    !git config user.name "$(git log -1 --format=%an)"
+    !git checkout -b "$BRANCH"
+    !git add docs/conferencia_regeneracao.md results/conferencia paper results
+    !git commit -q -m "Confere a regeneracao do XGBoost em ambiente limpo" || echo "nada a commitar"
+    !git push -q origin "$BRANCH" && echo "enviado para $BRANCH"
+else:
+    print("ENVIAR esta desligado. Marque a caixa para commitar e enviar.")
+    !git status --short | head -20
+'''
+
+
+def main() -> int:
+    if not (ROOT / SERIE_CSV).exists():
+        raise SystemExit(f"serie nao encontrada em {SERIE_CSV}")
+
+    celulas = [
+        md(f"""
+# Conferencia da regeneracao do XGBoost
+
+Confere, em ambiente limpo, o que a regeneracao (`{REF_ANTES_REGEN}..{REF_DEPOIS}`)
+mudou e o que ficou em aberto. Cinco perguntas, uma por secao:
+
+1. **Simbolos de LaTeX** -- a regeneracao das figuras trocou simbolos alem do
+   `\\blacksquare` ja corrigido? Quais exigem pacote, e o preambulo os carrega?
+2. **Tabela de variantes** -- os pontos do XGBoost mudaram e as colunas de IC e DM
+   nao. De que par sao essas colunas?
+3. **Calibracao** -- a rodada versionada reproduz sob semente fixa? Se sim, ela e a
+   canonica.
+4. **TabPFN** -- produz a previsao janela a janela e aplica o criterio pre-declarado,
+   que ate aqui nao pode ser calculado.
+5. **Conferencia geral** -- testes, assets regerados e diff do paper.
+
+As secoes 1 a 3 e 5 rodam sozinhas e levam poucos minutos. A secao 4 e a unica que
+precisa de credencial e de tempo (pouco mais de uma hora de API), e fica atras de um
+seletor.
+
+A ultima celula escreve `docs/conferencia_regeneracao.md` a partir do que as celulas
+mediram, para que o texto nao possa discordar dos numeros.
+"""),
+        md("## Preparo"),
+        code(CEL_SETUP),
+        code(CEL_AMBIENTE),
+        code(CEL_VERSOES),
+        md("## 1. Simbolos de LaTeX"),
+        code(CEL_SIMBOLOS),
+        code(CEL_SIMBOLOS_PACOTE),
+        code(CEL_SIMBOLOS_TESTE),
+        md("## 2. Colunas de IC e DM da tabela de variantes"),
+        code(CEL_TAB7),
+        md("## 3. Rodada de calibracao canonica"),
+        code(CEL_CALIBRACAO),
+        code(CEL_CALIBRACAO_DIFF),
+        md("""## 4. TabPFN por janela
+
+O item em aberto nao e o sMAPE do TabPFN, que ja existe: e a previsao janela a janela.
+Sem ela o criterio pre-declarado do artigo nao pode ser calculado, e a afirmacao de que
+ele bate as referencias ingenuas fica sem o mesmo lastro que todas as outras do texto.
+
+A margem em jogo e pequena: 0,14 pp sobre o naive sazonal com drift, menor que os
+0,177 pp de uma variante que ja reprovou no mesmo teste. O resultado provavel e de
+reprovacao, e ele vale tanto quanto uma aprovacao valeria."""),
+        code(CEL_TABPFN_MODO),
+        code(CEL_TABPFN_TESTE),
+        code(CEL_TABPFN_VEREDITO),
+        md("## 5. Conferencia geral"),
+        code(CEL_CONFERENCIA),
+        code(CEL_CONFERENCIA_ASSETS),
+        code(CEL_CONFERENCIA_ABERTOS),
+        md("## 6. Relatorio"),
+        code(CEL_RELATORIO),
+        code(CEL_COMMIT),
+    ]
+
+    # Os dois valores que o gerador injeta, para nao ficarem digitados no notebook.
+    for c in celulas:
+        c["source"] = [
+            l.replace("SERIE_CSV_PLACEHOLDER", SERIE_CSV)
+             .replace("REF_ANTES_REGEN_PLACEHOLDER", REF_ANTES_REGEN)
+            for l in c["source"]]
+
+    nb = caderno(celulas)
+    valida(nb)
+    SAIDA.parent.mkdir(parents=True, exist_ok=True)
+    SAIDA.write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
+    print(f"  notebook  {SAIDA.relative_to(ROOT)}  ({len(celulas)} celulas, "
+          f"{SAIDA.stat().st_size // 1024} KB)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

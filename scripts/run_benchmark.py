@@ -17,6 +17,7 @@ from cv_timeseries.models import (
     SeasonalNaiveForecaster,
     ProphetForecaster,
     SarimaForecaster,
+    TabPFNForecaster,
     TimesFMForecaster,
     XGBoostForecaster,
 )
@@ -54,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--models",
         default="sarima,prophet,timesfm",
-        help="Lista separada por vírgula (opções: sarima, prophet, timesfm, xgboost, catboost, naive, snaive, snaive_drift)",
+        help="Lista separada por vírgula (opções: sarima, prophet, timesfm, xgboost, catboost, tabpfn, naive, snaive, snaive_drift)",
     )
     parser.add_argument("--output-prefix", default="results/benchmark", help="Prefixo de saída")
     parser.add_argument(
@@ -98,7 +99,7 @@ def load_exog(csv_path: str, date_col: str, cols: list[str], freq: str) -> pd.Da
 
 def build_models(model_names: list[str]):
     selected = {m.strip().lower() for m in model_names if m.strip()}
-    valid = {"sarima", "prophet", "timesfm", "xgboost", "catboost",
+    valid = {"sarima", "prophet", "timesfm", "xgboost", "catboost", "tabpfn",
              "naive", "snaive", "snaive_drift"}
     invalid = selected - valid
     if invalid:
@@ -141,6 +142,12 @@ def build_models(model_names: list[str]):
             models.append(CatBoostForecaster())
         except Exception as exc:
             indisponiveis.append(f"CatBoost: {exc}")
+
+    if "tabpfn" in selected:
+        try:
+            models.append(TabPFNForecaster())
+        except Exception as exc:
+            indisponiveis.append(f"TabPFN: {exc}")
 
     # Baselines ingenuas: sem dependencia externa, entao nao precisam de try/except.
     # Rodam em qualquer maquina, que e parte do ponto: a referencia tem que estar

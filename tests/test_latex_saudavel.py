@@ -11,6 +11,7 @@ pagina. Um teste e o unico jeito de pegar isso antes da submissao.
 3. Comando de referencia apontando para um rotulo que nao existe em lugar nenhum.
 4. Tabela ou figura gerada que nao e `\\input` em nenhum documento: o resultado existe no
    repositorio e nao chega ao leitor.
+5. Simbolo que exige pacote entrando por regeneracao de figura, sem decisao de ninguem.
 """
 
 from __future__ import annotations
@@ -89,3 +90,97 @@ def test_toda_tabela_gerada_entra_no_documento():
     assert not fora, (
         f"tabelas geradas e nunca incluidas no manuscrito: {fora}. "
         "Ou entram, ou saem do gerador; nao ficam no meio.")
+
+
+# ---------------------------------------------------------------- simbolos e pacotes
+
+# Um simbolo que exige pacote e o defeito perfeito deste projeto: nao quebra nada visivel
+# enquanto o pacote estiver carregado, e quebra a compilacao inteira no dia em que alguem
+# enxugar o preambulo. Foi o caso do \blacksquare, que entrou numa regeneracao de figuras
+# sem que a troca tivesse sido decidida em lugar nenhum.
+#
+# A regra tem duas metades. A primeira cobra que todo simbolo de pacote usado tenha o
+# pacote no preambulo. A segunda cobra que todo simbolo usado seja conhecido: um comando
+# fora das duas listas reprova, e quem o introduziu tem de dizer de onde ele vem. Sem essa
+# segunda metade a proxima troca de simbolo passaria igual a esta.
+
+SIMBOLO_BASE = frozenset({
+    # LaTeX base, sem pacote nenhum
+    "bullet", "cdot", "cdots", "ldots", "dots", "times", "pm", "mp", "ast", "circ",
+    "leq", "geq", "le", "ge", "neq", "ne", "approx", "sim", "equiv", "propto",
+    "alpha", "beta", "gamma", "delta", "epsilon", "lambda", "mu", "sigma", "tau", "phi",
+    "Delta", "Sigma", "Omega", "Gamma", "Lambda", "Phi",
+    "frac", "sqrt", "sum", "prod", "int", "infty", "partial", "hat", "bar", "tilde",
+    "left", "right", "quad", "qquad", "text", "mathrm", "mathbf", "mathit", "textcolor",
+})
+
+SIMBOLO_DE_PACOTE = {
+    # simbolo -> pacote que o define
+    "blacksquare": "amssymb",
+    "square": "amssymb",
+    "blacktriangle": "amssymb",
+    "blacktriangledown": "amssymb",
+    "blacklozenge": "amssymb",
+    "lozenge": "amssymb",
+    "checkmark": "amssymb",
+    "vartriangle": "amssymb",
+    "leqslant": "amssymb",
+    "geqslant": "amssymb",
+    "boldsymbol": "amsmath",
+    "dfrac": "amsmath",
+    "tfrac": "amsmath",
+    "operatorname": "amsmath",
+}
+
+MODO_MATEMATICO = re.compile(r"\$([^$]*)\$")
+COMANDO = re.compile(r"\\([a-zA-Z]+)")
+
+
+def _sem_comentario(texto: str) -> str:
+    """Tira comentario de linha, para nao contar simbolo citado em prosa de comentario."""
+    linhas = []
+    for linha in texto.split("\n"):
+        m = re.search(r"(?<!\\)%", linha)
+        linhas.append(linha[:m.start()] if m else linha)
+    return "\n".join(linhas)
+
+
+def _simbolos_usados() -> dict[str, set[str]]:
+    """Comando -> nomes dos arquivos que o usam em modo matematico."""
+    usados: dict[str, set[str]] = {}
+    for f in TEX:
+        for trecho in MODO_MATEMATICO.findall(_sem_comentario(_texto(f))):
+            for cmd in COMANDO.findall(trecho):
+                usados.setdefault(cmd, set()).add(f.name)
+    return usados
+
+
+def _pacotes_do_preambulo() -> set[str]:
+    txt = _sem_comentario(_texto(PAPER / "preamble.tex"))
+    return set(re.findall(r"\\usepackage(?:\[[^\]]*\])?\{([^}]+)\}", txt))
+
+
+def test_todo_simbolo_de_pacote_tem_o_pacote_carregado():
+    """O \\blacksquare da fig4 veio assim: entrou na regeneracao e nao quebrou nada."""
+    pacotes = _pacotes_do_preambulo()
+    faltando = {}
+    for cmd, arquivos in _simbolos_usados().items():
+        pacote = SIMBOLO_DE_PACOTE.get(cmd)
+        if pacote and pacote not in pacotes:
+            faltando[cmd] = (pacote, sorted(arquivos))
+    assert not faltando, (
+        f"simbolos usados sem o pacote que os define: {faltando}. "
+        "Ou o pacote entra no preamble.tex, ou o gerador volta ao simbolo de base.")
+
+
+def test_nenhum_simbolo_desconhecido_em_modo_matematico():
+    """Simbolo novo tem de ser declarado, em base ou em pacote, antes de entrar."""
+    desconhecidos = {
+        cmd: sorted(arquivos)
+        for cmd, arquivos in _simbolos_usados().items()
+        if cmd not in SIMBOLO_BASE and cmd not in SIMBOLO_DE_PACOTE
+    }
+    assert not desconhecidos, (
+        f"simbolos nao catalogados: {desconhecidos}. "
+        "Classifique cada um em SIMBOLO_BASE ou em SIMBOLO_DE_PACOTE, para que a proxima "
+        "troca de simbolo numa regeneracao nao passe calada.")
