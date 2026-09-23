@@ -1,0 +1,148 @@
+{
+  "_meta": {
+    "xgboost": "3.2.0",
+    "n_jobs": 1,
+    "B": 10000,
+    "seed": 20260817,
+    "n_janelas": 103,
+    "determinismo": {
+      "identicas": true,
+      "smape": 6.880428188350518
+    }
+  },
+  "linha1": {
+    "antes": {
+      "mae": 526.5754995006573,
+      "rmse": 704.4693285856249,
+      "smape": 6.935026892395093,
+      "ic_low": 6.261442736408178,
+      "ic_high": 7.646527774534086
+    },
+    "depois": {
+      "mae": 521.2669302437298,
+      "rmse": 691.6402719227023,
+      "smape": 6.880428188350518,
+      "ic_low": 6.216955106771596,
+      "ic_high": 7.579436129073754
+    }
+  },
+  "pares": {
+    "antes": {
+      "prophet-sarima": {
+        "delta": -0.09468668529405644,
+        "ic_low": -0.36720559616366644,
+        "ic_high": 0.15682766851116314,
+        "dm": 0,
+        "distinguiveis": false
+      },
+      "prophet-timesfm": {
+        "delta": -0.13155544034178313,
+        "ic_low": -0.31870339455561236,
+        "ic_high": 0.05641111093603439,
+        "dm": 0,
+        "distinguiveis": false
+      },
+      "sarima-timesfm": {
+        "delta": -0.03686875504772669,
+        "ic_low": -0.30252871397124637,
+        "ic_high": 0.26178775591557274,
+        "dm": 0,
+        "distinguiveis": false
+      }
+    },
+    "depois": {
+      "prophet-sarima": {
+        "delta": -0.09468668529405644,
+        "ic_low": -0.36720559616366644,
+        "ic_high": 0.15682766851116314,
+        "dm": 0,
+        "distinguiveis": false
+      },
+      "prophet-timesfm": {
+        "delta": -0.13155544034178313,
+        "ic_low": -0.31870339455561236,
+        "ic_high": 0.05641111093603439,
+        "dm": 0,
+        "distinguiveis": false
+      },
+      "sarima-timesfm": {
+        "delta": -0.03686875504772669,
+        "ic_low": -0.30252871397124637,
+        "ic_high": 0.26178775591557274,
+        "dm": 0,
+        "distinguiveis": false
+      }
+    }
+  },
+  "vs_snaive": {
+    "antes": {
+      "delta": 0.6657136958844934,
+      "ic_low": 0.20946149424684535,
+      "ic_high": 1.1424385790563285,
+      "dm": 0,
+      "pior_que_snaive": false
+    },
+    "depois": {
+      "delta": 0.6111149918399184,
+      "ic_low": 0.18266725062609987,
+      "ic_high": 1.0718532761417598,
+      "dm": 0,
+      "pior_que_snaive": false
+    }
+  },
+  "ranking": {
+    "antes": [
+      "prophet",
+      "sarima",
+      "timesfm",
+      "snaive",
+      "catboost",
+      "xgboost"
+    ],
+    "depois": [
+      "prophet",
+      "sarima",
+      "timesfm",
+      "snaive",
+      "catboost",
+      "xgboost"
+    ]
+  },
+  "por_horizonte": {
+    "1": {
+      "antes": 6.022708412843231,
+      "depois": 6.116107119340746,
+      "delta": 0.09339870649751436
+    },
+    "2": {
+      "antes": 6.741927827342047,
+      "depois": 6.889106645577145,
+      "delta": 0.1471788182350977
+    },
+    "3": {
+      "antes": 7.160615151356953,
+      "depois": 7.199697027431384,
+      "delta": 0.03908187607443114
+    },
+    "4": {
+      "antes": 7.3218688890252235,
+      "depois": 7.074646335769521,
+      "delta": -0.24722255325570242
+    },
+    "5": {
+      "antes": 7.142224990559372,
+      "depois": 7.001718771528675,
+      "delta": -0.14050621903069693
+    },
+    "6": {
+      "antes": 7.22081608324373,
+      "depois": 7.0012932304556355,
+      "delta": -0.2195228527880948
+    }
+  },
+  "figuras_afetadas": {
+    "fig2_smape_ic": "ponto e barra do XGBoost",
+    "fig3_horizonte": "a curva do XGBoost, seis pontos",
+    "revisao_fig_naive_estendida": "ponto do XGBoost no mesmo eixo das ingenuas"
+  }
+}
