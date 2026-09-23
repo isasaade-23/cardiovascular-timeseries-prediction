@@ -66,8 +66,11 @@ CEL_SETUP = '''
 import os, subprocess, sys, json, re, shutil
 from pathlib import Path
 
-REPO = "fabianofilho/cardiovascular-timeseries-prediction"  #@param {type:"string"}
-REF = "e829dc2"  #@param {type:"string"}
+# O fork, e nao o repositorio de origem: o que a conferencia roda -- os testes de
+# simbolo, o forecaster do TabPFN, o checkpoint por janela -- ainda nao esta no main.
+# A arvore conferida continua sendo a da regeneracao, que e ancestral desta branch.
+REPO = "isasaade-23/cardiovascular-timeseries-prediction"  #@param {type:"string"}
+REF = "isasaade/conferencia-regeneracao"  #@param {type:"string"}
 DESTINO = "/content/repo"
 
 TOKEN = os.environ.get("GITHUB_TOKEN")
@@ -724,7 +727,7 @@ if ENVIAR and not TOKEN:
 elif ENVIAR:
     !git config user.email "$(git log -1 --format=%ae)"
     !git config user.name "$(git log -1 --format=%an)"
-    !git checkout -b "$BRANCH"
+    !git checkout -B "$BRANCH"
     !git add docs/conferencia_regeneracao.md results/conferencia paper results
     !git commit -q -m "Confere a regeneracao do XGBoost em ambiente limpo" || echo "nada a commitar"
     !git push -q origin "$BRANCH" && echo "enviado para $BRANCH"
