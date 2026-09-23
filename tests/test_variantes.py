@@ -114,8 +114,7 @@ def test_a_variante_base_reproduz_o_benchmark():
     """
     m = json.loads(JSON.read_text(encoding="utf-8"))["modelos"]
     assert m["catboost_base"]["smape"] == pytest.approx(6.5893, abs=1e-3)
-    # O XGBoost depende da versao da biblioteca; ver docs/xgboost_reprodutibilidade.md.
-    assert m["xgboost_base"]["smape"] == pytest.approx(6.8324, abs=2e-3)
+    assert m["xgboost_base"]["smape"] == pytest.approx(6.8804, abs=2e-3)
 
 
 @sem_resultado

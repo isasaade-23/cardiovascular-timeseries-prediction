@@ -24,7 +24,10 @@ XGB_PARAMS = dict(
     subsample=0.9,
     colsample_bytree=0.9,
     random_state=42,
-    n_jobs=-1,
+    # ADAPTADO junto com src/cv_timeseries/models.py: n_jobs=1 para o resultado nao
+    # depender do numero de nucleos da maquina. Sem isto a Tabela 7 ficaria num ambiente
+    # e a Tabela 1 noutro.
+    n_jobs=1,
 )
 
 CAT_PARAMS = dict(

@@ -256,7 +256,7 @@ print("xgboost", xgboost.__version__, "| catboost", catboost.__version__)
 
 RESULTADOS["xgboost"] = avalia(preditor_recursivo(lambda: XGBRegressor(
     n_estimators=300, max_depth=4, learning_rate=0.05,
-    subsample=0.9, colsample_bytree=0.9, random_state=42, n_jobs=-1,
+    subsample=0.9, colsample_bytree=0.9, random_state=42, n_jobs=1   # ADAPTADO: igual a src/cv_timeseries/models.py,
 ), nome="xgboost"), "xgboost")
 
 RESULTADOS["catboost"] = avalia(preditor_recursivo(lambda: CatBoostRegressor(
@@ -580,7 +580,7 @@ if RODAR_OPTUNA:
                 min_child_weight=trial.suggest_int("min_child_weight", 1, 10),
                 reg_lambda=trial.suggest_float("reg_lambda", 1e-2, 50.0, log=True),
                 reg_alpha=trial.suggest_float("reg_alpha", 1e-3, 5.0, log=True),
-                random_state=42, n_jobs=-1)
+                random_state=42, n_jobs=1   # ADAPTADO: igual a src/cv_timeseries/models.py)
         return dict(
             iterations=trial.suggest_int("iterations", 100, 1500, step=50),
             depth=trial.suggest_int("depth", 2, 8),

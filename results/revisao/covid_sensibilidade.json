@@ -14,7 +14,7 @@
         "sarima": 4.7956521528042595,
         "timesfm": 4.832520907851986,
         "catboost": 6.589326365906759,
-        "xgboost": 6.935026892395093,
+        "xgboost": 6.880428188350518,
         "snaive": 6.269313196510599
       },
       "pares_top3": {
@@ -49,9 +49,9 @@
           "pior_que_snaive": false
         },
         "xgboost": {
-          "delta": 0.6657136958844934,
-          "ic_low": 0.20946149424684535,
-          "ic_high": 1.1424385790563285,
+          "delta": 0.6111149918399184,
+          "ic_low": 0.18266725062609987,
+          "ic_high": 1.0718532761417598,
           "dm_significativos": 0,
           "pior_que_snaive": false
         }
@@ -64,7 +64,7 @@
         "sarima": 3.737645463400224,
         "timesfm": 3.6637116261667497,
         "catboost": 5.581700319917002,
-        "xgboost": 6.076375091466525,
+        "xgboost": 5.9187263275565805,
         "snaive": 4.794664150009176
       },
       "pares_top3": {
@@ -99,9 +99,9 @@
           "pior_que_snaive": false
         },
         "xgboost": {
-          "delta": 1.2817109414573489,
-          "ic_low": 0.7418259535630966,
-          "ic_high": 1.864497046601437,
+          "delta": 1.1240621775474047,
+          "ic_low": 0.6205133844273522,
+          "ic_high": 1.677071303447761,
           "dm_significativos": 2,
           "pior_que_snaive": false
         }
@@ -114,7 +114,7 @@
         "sarima": 3.4105739335670995,
         "timesfm": 3.5908810174381696,
         "catboost": 4.684403392448417,
-        "xgboost": 5.088095225289399,
+        "xgboost": 5.044873027372844,
         "snaive": 4.303494069923458
       },
       "pares_top3": {
@@ -149,10 +149,10 @@
           "pior_que_snaive": false
         },
         "xgboost": {
-          "delta": 0.7846011553659409,
-          "ic_low": 0.36307769489825953,
-          "ic_high": 1.2420996225868244,
-          "dm_significativos": 2,
+          "delta": 0.7413789574493865,
+          "ic_low": 0.32463245190043954,
+          "ic_high": 1.1953542608786918,
+          "dm_significativos": 0,
           "pior_que_snaive": false
         }
       }

@@ -23,7 +23,9 @@ OPCIONAIS = RAIZ / "requirements-optional.txt"
 DOC = RAIZ / "docs" / "xgboost_reprodutibilidade.md"
 
 # sMAPE do XGBoost base nas 103 janelas, por versao da biblioteca. Mesmo codigo, mesmos
-# dados, mesma semente: so o ambiente muda. Medido em 2026-08-19.
+# dados, mesma semente: so o ambiente muda. Medido em 2026-08-19 com n_jobs=-1 numa
+# maquina de 12 nucleos, que era o default de entao. Serve para mostrar a amplitude
+# entre versoes, e nao para reproduzir o valor publicado, que hoje sai de n_jobs=1.
 POR_VERSAO = {
     "2.0.3": 6.854448,
     "2.1.4": 6.854448,
@@ -34,7 +36,23 @@ POR_VERSAO = {
     # Colab, rodada independente da Isabella Saade; outra maquina e outro SO.
     "3.4.1": 6.803473,
 }
-GUARDADO_EM_RESULTS = 6.9350
+# Lido do arquivo, e nao escrito aqui. Estava fixo no codigo, e por isso o teste que
+# deveria falhar quando o resultado fosse regenerado NAO falhou: a constante nao acompanha
+# o CSV. Numero de teste que nao le a fonte testa a memoria de quem escreveu.
+def _guardado_em_results() -> float:
+    import csv
+    with (RAIZ / "results" / "benchmark_sim_real_sp_2010_2023_metrics.csv").open(
+            encoding="utf-8") as f:
+        for linha in csv.DictReader(f):
+            if linha["model"] == "xgboost":
+                return float(linha["smape"])
+    raise AssertionError("linha do xgboost sumiu do metrics.csv")
+
+
+# Configuracao fixada pelo repositorio: xgboost 3.2.0 com n_jobs=1. E a unica combinacao
+# que nao depende da maquina, porque qualquer outra contagem de threads muda a ordem de
+# soma dos gradientes.
+FIXADO = 6.880428
 
 
 def test_a_versao_do_xgboost_continua_fixada():
@@ -82,17 +100,36 @@ def test_o_intervalo_entre_ambientes_nao_muda_conclusao():
         assert v - MELHOR_LIDER > 2.0, f"xgboost {versao} chegou perto do lider: {v}"
 
 
-def test_o_valor_guardado_em_results_nao_e_reproduzido_por_nenhuma_versao():
-    """Caracterizacao, nao aprovacao. Ver a decisao pendente no doc.
+def test_o_valor_guardado_e_o_da_configuracao_fixada():
+    """O inverso do que este teste pedia antes, e essa inversao e a noticia.
 
-    Enquanto este teste passar, a linha do XGBoost na Tabela 1 vem de um ambiente que nao
-    sabemos recriar. Ele passa a falhar no dia em que alguem regenerar o resultado com a
-    versao fixada, e essa falha e o lembrete de atualizar o doc e as tabelas derivadas.
+    Ate 2026-09-23 a Tabela 1 trazia 6.9350, que nenhuma versao nem contagem de threads
+    reproduzia, e este teste existia para registrar isso. O resultado foi regenerado com
+    xgboost 3.2.0 e n_jobs=1, e agora o valor guardado E o da configuracao fixada. O teste
+    passou a cobrar a igualdade em vez da diferenca.
+
+    Le do CSV de proposito: a versao anterior fixava 6.9350 no codigo e por isso NAO
+    falhou quando o resultado mudou, que era exatamente o momento em que ela deveria ter
+    falhado.
     """
-    assert all(abs(v - GUARDADO_EM_RESULTS) > 1e-3 for v in POR_VERSAO.values()), (
-        "alguma versao passou a reproduzir o valor guardado. Se foi por regeneracao do "
-        "resultado, atualize docs/xgboost_reprodutibilidade.md e remova este teste."
+    guardado = _guardado_em_results()
+    assert guardado == pytest.approx(FIXADO, abs=1e-4), (
+        f"results/ tem {guardado:.6f} e a configuracao fixada produz {FIXADO:.6f}. "
+        "Ou o resultado foi gerado noutro ambiente, ou n_jobs deixou de ser 1 em "
+        "src/cv_timeseries/models.py."
     )
+
+
+def test_o_modelo_continua_fixado_em_uma_thread():
+    """A metade da reprodutibilidade que a versao fixada nao cobre.
+
+    Fixar a versao nao basta: a mesma 3.2.0 da 6.827 em 4 threads e 6.880 em 1. Se alguem
+    devolver n_jobs=-1 procurando velocidade, o numero publicado deixa de ser reproduzivel
+    sem nada quebrar visivelmente.
+    """
+    fonte = (RAIZ / "src" / "cv_timeseries" / "models.py").read_text(encoding="utf-8")
+    assert "n_jobs=1," in fonte, "n_jobs deixou de ser 1 no XGBoostForecaster"
+    assert "n_jobs=-1," not in fonte, "n_jobs=-1 voltou; o resultado volta a depender da maquina"
 
 
 @pytest.mark.parametrize("trecho", ["xgboost", "n_jobs", "CatBoost"])

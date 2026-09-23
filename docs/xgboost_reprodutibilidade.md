@@ -99,7 +99,50 @@ Efeito colateral que valia saber: o teto vazado do XGBoost, 6,2497, **passa** o 
 de 6,2693 por 0,02 pp. O texto antes dizia que nem o teto alcançava a referência, o que valia
 para o CatBoost e não para o XGBoost. Agora declara a exceção.
 
-## Decisão pendente
+## Decisão tomada, 2026-09-23
+
+**Regenerado.** O valor publicado passa de 6,9350 para **6,880428**, medido com xgboost
+3.2.0 e `n_jobs=1`.
+
+Fixar a versão não bastava: a mesma 3.2.0 dá 6,827 em 4 threads e 6,880 em 1. `n_jobs=1` é
+a única escolha que não depende da máquina, inclusive num runner de CI com um núcleo. Custa
+tempo de ajuste e compra um número que outra pessoa consegue obter. Trocado em
+`src/cv_timeseries/models.py`, em `scripts/revisao/variants.py`, em `run_optuna.py` e no
+gerador do notebook do TabPFN, para não sobrar um canto no ambiente antigo.
+
+Antes de aplicar, `scripts/regen_xgboost.py` confirmou que com `n_jobs` fixo duas execuções
+dão previsão a previsão idêntica.
+
+### O que foi regenerado
+
+Quatro rodadas, porque regenerar só a Tabela 1 deixaria a coluna "sem temperatura" da
+Tabela 5 num ambiente e a "com temperatura" noutro:
+
+| arquivo | rótulo | antes | depois | delta |
+|---|---|---:|---:|---:|
+| benchmark_sim_real_sp_2010_2023 | xgboost | 6,9350 | 6,8804 | -0,0546 |
+| benchmark_exog_temp_climatology | xgboost_temp | 6,5528 | 6,5121 | -0,0407 |
+| benchmark_exog_temp_observed | xgboost_temp | 6,5500 | 6,5250 | -0,0250 |
+| benchmark_slide60_2010_2023 | xgboost_slide60 | 6,8657 | 6,8569 | -0,0088 |
+
+Mais os três conjuntos de incerteza (semente 20260817), as doze variantes, a tabela do
+Optuna e todos os assets do paper. Só as linhas do XGBoost foram substituídas; as dos
+outros modelos ficaram byte a byte, porque prophet, sarima e catboost reproduzem com
+divergência 0,0000 e o TimesFM não é reexecutável aqui.
+
+### O que mudou de conclusão
+
+Uma coisa. Na Tabela 5, o ganho da temperatura no XGBoost passou de **DM 2/6 para 3/6**, e
+com o intervalo já excluindo zero ele passa a atender o critério pré-declarado. É a única
+linha das quatro que atende, e está escrita no manuscrito.
+
+O resto não se move: os três pares do top-3 continuam indistinguíveis com DM 0/6, a
+comparação contra o naive sazonal continua não estabelecida, e o ranking é o mesmo.
+
+Um efeito colateral vale nota: por horizonte a mudança chega a 0,247 pp (h=4), bem mais que
+os 0,055 do agregado, porque os sinais se cancelam. É o que a fig3 desenha.
+
+### Decisão anterior, mantida como registro
 
 Regenerar a linha do XGBoost com um ambiente fixado obrigaria a regenerar também as tabelas
 de comparação pareada, os testes de Diebold-Mariano e as figuras que dependem dele. É uma

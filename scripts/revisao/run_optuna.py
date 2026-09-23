@@ -59,7 +59,9 @@ def suggest(trial, kind):
             reg_lambda=trial.suggest_float("reg_lambda", 1e-3, 100.0, log=True),
             reg_alpha=trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
             random_state=42,
-            n_jobs=-1,
+            # ADAPTADO: n_jobs=1, como em src/cv_timeseries/models.py. Se a busca for
+            # refeita, tem que rodar no mesmo ambiente que avalia o resultado.
+            n_jobs=1,
         )
     return dict(
         iterations=trial.suggest_int("iterations", 100, 1500, step=50),

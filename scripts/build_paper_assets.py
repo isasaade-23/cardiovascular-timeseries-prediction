@@ -566,26 +566,11 @@ criterion, only SARIMA meets both conditions.{nota_enr}
         linhas.append(f"{ROTULO[m]} & {sem:.2f} & {com:.2f} & {sgn(sem - com)} & "
                       f"{intervalo(lo, hi)} & {nsig} of {nh} & {sm_tt[m].mean():.2f} \\\\")
 
-    # Prophet. O manuscrito o excluia desta tabela alegando que nao aceita covariavel
-    # exogena; aceita, por add_regressor(). A rodada esta em scripts/revisao e sua
-    # analise em scripts/analisa_prophet_temp.py, que confere antes se a versao SEM
-    # temperatura reproduz a linha do Prophet na Tabela 1 (divergencia 0.0e+00).
-    pt_json = RES / "revisao" / "prophet_temp_vs_base.json"
-    if pt_json.exists():
-        pt = json.loads(pt_json.read_text(encoding="utf-8"))
-        d = pt["modelos"]["prophet_temp"]
-        teto_p = pt["modelos"]["prophet_temp_ceiling"]["smape"]
-        sem_p = pt["modelos"]["prophet_repro"]["smape"]
-        V["tabela5"]["prophet"] = {
-            "sem": sem_p, "com": d["smape"], "ganho": d["ganho_pp"],
-            "ic_low": d["ic_low"], "ic_high": d["ic_high"],
-            "dm_sig": d["dm_significativos"], "teto": teto_p,
-            "procedencia_max_div": pt["_meta"]["procedencia_max_div"],
-        }
-        linhas.insert(0, f"{ROTULO['prophet']} & {sem_p:.2f} & {d['smape']:.2f} & "
-                         f"{sgn(d['ganho_pp'])} & "
-                         f"{intervalo(d['ic_low'], d['ic_high'])} & "
-                         f"{d['dm_significativos']} of {nh} & {teto_p:.2f} \\\\")
+    # A linha do Prophet e montada acima, junto com as outras, por modelos_t5. Havia
+    # aqui um segundo bloco que a inseria de novo a partir de um JSON, sobrevivente do
+    # merge das duas implementacoes, e a tabela saia com o Prophet duplicado. Ficou a
+    # versao de cima porque ela passa pelo mesmo bootstrap das demais linhas, entao o
+    # intervalo e o DM sao comparaveis; a outra lia numeros ja agregados.
     escreve_tabela("tab5_temperatura", f"""\\begin{{table}}[htbp]
 \\centering
 \\small

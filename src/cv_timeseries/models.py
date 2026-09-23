@@ -161,7 +161,12 @@ class XGBoostForecaster(_SkforecastRecursiveForecaster):
             subsample=0.9,
             colsample_bytree=0.9,
             random_state=42,
-            n_jobs=-1,
+            # n_jobs=1, e nao -1. Com -1 o XGBoost usa todos os nucleos, e a ordem de soma
+            # dos gradientes muda com quantos existem: a mesma versao da 6.827 em 4
+            # threads, 6.834 em 8 e 6.832 em 12. Fixar em 1 e a unica escolha que nao
+            # depende da maquina, inclusive num runner de CI com um nucleo. Custa tempo de
+            # ajuste e compra reprodutibilidade. Ver docs/xgboost_reprodutibilidade.md.
+            n_jobs=1,
         )
         params.update(self._xgb_kwargs)
         return XGBRegressor(**params)
