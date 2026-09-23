@@ -239,7 +239,8 @@ print("xgboost", xgboost.__version__, "| catboost", catboost.__version__)
 
 RESULTADOS["xgboost"] = avalia(preditor_recursivo(lambda: XGBRegressor(
     n_estimators=300, max_depth=4, learning_rate=0.05,
-    subsample=0.9, colsample_bytree=0.9, random_state=42, n_jobs=1   # ADAPTADO: igual a src/cv_timeseries/models.py,
+    # ADAPTADO: n_jobs=1, igual a src/cv_timeseries/models.py
+    subsample=0.9, colsample_bytree=0.9, random_state=42, n_jobs=1,
 ), nome="xgboost"), "xgboost")
 
 RESULTADOS["catboost"] = avalia(preditor_recursivo(lambda: CatBoostRegressor(
@@ -323,15 +324,22 @@ THINKING = False #@param {type:"boolean"}
 # O checkpoint no disco da sessao do Colab morre com a sessao, e uma rodada completa
 # custa mais de uma hora de API. Se o Drive estiver montado ele fica la, e uma queda de
 # sessao deixa de custar a rodada inteira. Foi assim que o CSV da rodada anterior se
-# perdeu, e com ele a unica medicao por janela que existia do TabPFN.
+# perdeu, e com ele a unica medicao por janela que existia do TabPFN. Por isso o Drive
+# e montado aqui, em vez de recomendado num comentario que ninguem le antes de gastar
+# a hora.
 CHECKPOINT = "tabpfn_previsoes.csv"
+if MODO != "nao rodar":
+    try:
+        from google.colab import drive
+        drive.mount("/content/drive")
+    except Exception as e:
+        print(f"Drive nao montou ({type(e).__name__}: {e})")
 if os.path.isdir("/content/drive/MyDrive"):
     os.makedirs("/content/drive/MyDrive/tabpfn_cv", exist_ok=True)
     CHECKPOINT = "/content/drive/MyDrive/tabpfn_cv/tabpfn_previsoes.csv"
     print(f"checkpoint no Drive: {CHECKPOINT}")
 else:
-    print("Drive nao montado: o checkpoint fica no disco da sessao e morre com ela.")
-    print("Para montar: from google.colab import drive; drive.mount('/content/drive')")
+    print("AVISO: checkpoint no disco da sessao. Uma queda custa a rodada inteira.")
 
 CONFIRMO_RODAR = MODO != "nao rodar"
 LIMITE_JANELAS = 5 if MODO.startswith("teste") else None
@@ -600,7 +608,8 @@ if RODAR_OPTUNA:
                 min_child_weight=trial.suggest_int("min_child_weight", 1, 10),
                 reg_lambda=trial.suggest_float("reg_lambda", 1e-2, 50.0, log=True),
                 reg_alpha=trial.suggest_float("reg_alpha", 1e-3, 5.0, log=True),
-                random_state=42, n_jobs=1   # ADAPTADO: igual a src/cv_timeseries/models.py)
+                # ADAPTADO: n_jobs=1, igual a src/cv_timeseries/models.py
+                random_state=42, n_jobs=1)
         return dict(
             iterations=trial.suggest_int("iterations", 100, 1500, step=50),
             depth=trial.suggest_int("depth", 2, 8),

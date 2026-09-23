@@ -492,6 +492,22 @@ elif MODO != "nao rodar":
     os.environ["TABPFN_TOKEN"] = token.strip()
     print(f"  chave lida dos Secrets, {len(os.environ['TABPFN_TOKEN'])} caracteres")
 
+    # Checkpoint no Drive, e nao no disco da sessao. Uma rodada de mais de uma hora
+    # que cai no minuto 50 sem isto custa a hora inteira, e ja custou uma vez: foi
+    # assim que a unica medicao por janela que existia se perdeu. Retomar e so rodar
+    # esta celula de novo; as janelas ja feitas nao voltam para a API.
+    try:
+        from google.colab import drive
+        drive.mount("/content/drive")
+    except Exception as e:
+        print(f"  Drive nao montou ({e}); o checkpoint fica no disco da sessao")
+    if os.path.isdir("/content/drive/MyDrive"):
+        CHECKPOINT = "/content/drive/MyDrive/tabpfn_cv/checkpoint.csv"
+    else:
+        CHECKPOINT = "/content/tabpfn_checkpoint.csv"
+    os.makedirs(os.path.dirname(CHECKPOINT), exist_ok=True)
+    print(f"  checkpoint em {CHECKPOINT}")
+
     # No modo de teste o horizonte e o minimo de treino ficam iguais; o que muda e o
     # tamanho da serie, cortada para dar poucas janelas. Um sMAPE de 5 janelas NAO se
     # compara com o das 103, e por isso ele nao entra em lugar nenhum: serve para
@@ -504,7 +520,10 @@ elif MODO != "nao rodar":
         d.to_csv(entrada, index=False)
         print(f"  modo de teste: {len(d)} meses, {len(d) - 60 - 6 + 1} janelas")
 
-    !python scripts/run_benchmark.py --input-csv "$entrada" --models tabpfn --horizon 6 --min-train-size 60 --output-prefix results/revisao/tabpfn 2>&1 | tail -15
+    # No modo de teste o checkpoint nao entra: ele guarda janelas da rodada completa,
+    # e misturar as duas daria um resultado que nao e de nenhuma das duas.
+    ck = "" if MODO.startswith("teste") else CHECKPOINT
+    !python scripts/run_benchmark.py --input-csv "$entrada" --models tabpfn --horizon 6 --min-train-size 60 --output-prefix results/revisao/tabpfn --checkpoint-csv "$ck" 2>&1 | tail -15
 else:
     print("Nada a rodar. Para produzir o CSV, troque MODO acima.")
     print("Sem ele a secao seguinte pula o TabPFN e o item continua em aberto.")
