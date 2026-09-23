@@ -104,8 +104,21 @@ VEREDITOS = {}
 CEL_AMBIENTE = '''
 # Instala o ambiente fixado. Demora, e e o ponto do exercicio: e o statsmodels 0.15.0
 # que faz o SARIMA reproduzir; com 0.14.6 ele diverge em duas das 103 janelas.
-!pip -q install -r requirements-lock.txt 2>&1 | tail -5
-print("instalacao terminada")
+#
+# O `tail` de antes escondia justamente o que importa. O pip resolve conflito
+# desistindo em silencio de rebaixar o que o Colab ja traz instalado, e o resultado e
+# um ambiente que parece o do lock e nao e. A saida inteira vai para arquivo, e as
+# linhas de conflito sobem para a tela.
+!pip install -r requirements-lock.txt > /content/pip.log 2>&1
+conflitos = [l for l in Path("/content/pip.log").read_text().splitlines()
+             if any(p in l.lower() for p in
+                    ("error", "conflict", "incompatible", "cannot install"))]
+if conflitos:
+    print(f"  {len(conflitos)} linha(s) de conflito na instalacao:")
+    for l in conflitos[:15]:
+        print("   ", l[:140])
+else:
+    print("  instalacao sem conflito declarado")
 '''
 
 CEL_VERSOES = '''
@@ -138,10 +151,22 @@ for nome in IMPORTA:
 
 VEREDITOS["ambiente"] = {
     "divergentes": divergentes,
-    "conclusao": ("ambiente igual ao lock" if not divergentes else
-                  f"{len(divergentes)} pacote(s) fora do lock: {sorted(divergentes)}"),
+    "conclusao": (
+        "ambiente igual ao lock: divergencia numerica daqui para frente e do codigo, "
+        "nao da bancada." if not divergentes else
+        f"{len(divergentes)} pacote(s) fora do lock: {sorted(divergentes)}. Enquanto "
+        "isso valer, nenhuma divergencia numerica pode ser atribuida ao codigo, "
+        "porque a bancada tambem mudou."),
 }
 print("\\n  " + VEREDITOS["ambiente"]["conclusao"])
+
+if divergentes:
+    print("\\n  " + "=" * 66)
+    print("  O Colab nao consegue rebaixar numpy, pandas e afins com a sessao ja")
+    print("  em pe: os modulos estao carregados. Reinicie o ambiente de execucao")
+    print("  (Ambiente de execucao > Reiniciar sessao) e rode de novo a partir da")
+    print("  primeira celula. A instalacao ja esta no disco e passa rapido.")
+    print("  " + "=" * 66)
 '''
 
 CEL_SIMBOLOS = '''
@@ -321,25 +346,99 @@ print(f"  {'coluna':<14}{'maior diferenca absoluta':>26}")
 for col, v in maximos.items():
     print(f"  {col:<14}{v:>26.6f}")
 
-pontuais = [c for c in ("y_pred", "y_true") if c in maximos]
-bandas = [c for c in ("lower", "upper", "lo", "hi") if c in maximos]
-reproduz = all(v == 0.0 for v in maximos.values())
+# A distincao que decide o item: previsao pontual e uma coisa, banda e outra. As duas
+# movendo juntas e sinal de bancada diferente. So a banda movendo, com o ponto parado
+# na ultima casa, e sinal de amostragem nao semeada -- e ai o problema esta no codigo,
+# nao na maquina.
+PONTUAIS = [c for c in ("y_pred", "y_true") if c in maximos]
+BANDAS = [c for c in ("lo", "hi", "largura", "is", "dentro") if c in maximos]
+
+moveu_ponto = any(maximos[c] != 0.0 for c in PONTUAIS)
+moveu_banda = any(maximos[c] != 0.0 for c in BANDAS)
+reproduz = not moveu_ponto and not moveu_banda
+ambiente_sujo = bool(VEREDITOS.get("ambiente", {}).get("divergentes"))
+
+if ambiente_sujo:
+    conclusao = (
+        "indeterminado. A rodada nao reproduziu, mas o ambiente nao e o do lock "
+        f"({sorted(VEREDITOS['ambiente']['divergentes'])}), entao a divergencia pode "
+        "ser da bancada e nao da semente. Reinicie a sessao para o lock valer e rode "
+        "esta secao de novo: este item so fecha com os dois lados iguais.")
+elif reproduz:
+    conclusao = ("a rodada versionada reproduz sob a semente fixa, no ambiente do "
+                 "lock: ela e a canonica, e o que faltava era declarar isso.")
+elif moveu_banda and not moveu_ponto:
+    conclusao = (
+        "a previsao pontual reproduz exata e so a banda se move, no ambiente do lock. "
+        "A semente de run_calibracao.py nao alcanca a amostragem que produz o "
+        "intervalo, entao 'rodada canonica' nao se resolve escolhendo uma das "
+        "rodadas: ou a amostragem passa a ser semeada de verdade, ou o texto para de "
+        "dizer que ela e semeada e a rodada versionada e declarada a de referencia.")
+else:
+    conclusao = (
+        "a previsao pontual se move, no ambiente do lock. Isso e mais grave que "
+        "calibracao: o ponto e o que a Tabela 1 reporta, e ele nao devia depender de "
+        "rodada. Antes de escolher rodada canonica, achar o que move o ponto.")
 
 VEREDITOS["calibracao"] = {
     "reproduz_byte_a_byte": bool(reproduz),
+    "moveu_previsao_pontual": bool(moveu_ponto),
+    "moveu_banda": bool(moveu_banda),
+    "ambiente_do_lock": not ambiente_sujo,
     "maior_diferenca_por_coluna": maximos,
     "picp_guardado": {m: guardado_json.get(m, {}).get("picp")
                       for m in ("sarima", "prophet") if m in guardado_json},
     "picp_novo": {m: novo_json.get(m, {}).get("picp")
                   for m in ("sarima", "prophet") if m in novo_json},
-    "conclusao": (
-        "a rodada versionada reproduz sob a semente fixa: ela e a canonica, e o que "
-        "faltava era declarar isso."
-        if reproduz else
-        "a rodada versionada nao reproduz. A rodada semeada passa a ser a canonica, e "
-        "a figura de calibracao e a tabela 6 saem dela, da mesma fonte."),
+    "conclusao": conclusao,
 }
-print("\\n  " + VEREDITOS["calibracao"]["conclusao"])
+print("\\n  " + conclusao)
+'''
+
+CEL_CALIBRACAO_SEMENTE = '''
+# A semente de run_calibracao.py alcanca a amostragem do Prophet, ou nao?
+#
+# A pergunta e respondivel em dois ajustes, e nao depende de versao de biblioteca nem
+# de arqueologia de changelog: semeia, ajusta, semeia igual, ajusta de novo, compara.
+# Se o ponto sai identico e a banda nao, a semente nao chega onde produz o intervalo.
+# O manuscrito ja afirma isso em prosa, na nota da Tabela 6; aqui vira medicao.
+import numpy as np
+sys.path.insert(0, "scripts")
+from run_calibracao import prophet_intervalo, SEED
+from cv_timeseries.data import load_and_aggregate_series
+
+serie = load_and_aggregate_series(
+    "SERIE_CSV_PLACEHOLDER", "date", "value", "MS")
+treino = serie.iloc[:60]
+
+saidas = []
+for _ in range(2):
+    np.random.seed(SEED)
+    saidas.append(prophet_intervalo(treino, 6))
+
+d_ponto = float(np.abs(saidas[0][0] - saidas[1][0]).max())
+d_lo = float(np.abs(saidas[0][1] - saidas[1][1]).max())
+d_hi = float(np.abs(saidas[0][2] - saidas[1][2]).max())
+print(f"  dois ajustes da MESMA janela, com a mesma semente antes de cada um:")
+print(f"    maior diferenca no ponto : {d_ponto:.6f}")
+print(f"    maior diferenca no limite inferior: {d_lo:.6f}")
+print(f"    maior diferenca no limite superior: {d_hi:.6f}")
+
+alcanca = d_lo == 0.0 and d_hi == 0.0
+VEREDITOS["semente_do_prophet"] = {
+    "diferenca_ponto": d_ponto, "diferenca_lo": d_lo, "diferenca_hi": d_hi,
+    "semente_alcanca_a_banda": bool(alcanca),
+    "conclusao": (
+        "a semente alcanca a banda: duas rodadas seguidas dao o mesmo intervalo, e "
+        "entao divergencia entre rodadas e de ambiente, nao de amostragem."
+        if alcanca else
+        "a semente NAO alcanca a banda: dois ajustes da mesma janela, com a mesma "
+        "semente, dao intervalos diferentes. `np.random.seed` nao controla o gerador "
+        "que produz o intervalo nesta versao do Prophet. Enquanto isso valer, nenhuma "
+        "rodada de calibracao e reproduzivel, e escolher uma como canonica so fixa um "
+        "numero sem torna-lo verificavel."),
+}
+print("\\n  " + VEREDITOS["semente_do_prophet"]["conclusao"])
 '''
 
 CEL_TABPFN_MODO = '''
@@ -492,12 +591,27 @@ print("\\n  diff em paper/ depois de regerar:")
 
 diff = subprocess.run(["git", "diff", "--name-only", "--", "paper/"],
                       capture_output=True, text=True).stdout.split()
+
+# A secao 3 reescreve os CSVs da calibracao, e a tabela 6 e os numeros verificados
+# saem deles. Esse diff e consequencia dela, nao achado novo, e dizer o contrario
+# transformaria um efeito colateral conhecido em alarme.
+DA_CALIBRACAO = {"paper/tables/tab6_calibracao.tex", "paper/verified_numbers.json"}
+esperado = sorted(set(diff) & DA_CALIBRACAO)
+inesperado = sorted(set(diff) - DA_CALIBRACAO)
+
 VEREDITOS["assets"] = {
     "arquivos_com_diff": diff,
-    "conclusao": ("regerar os assets nao move nada no paper: o que esta versionado e o "
-                  "que a fonte produz." if not diff else
-                  f"regerar move {len(diff)} arquivo(s): {diff}. Cada um precisa de "
-                  "explicacao antes de ser commitado."),
+    "explicados_pela_calibracao": esperado,
+    "sem_explicacao": inesperado,
+    "conclusao": (
+        "regerar os assets nao move nada no paper: o que esta versionado e o que a "
+        "fonte produz." if not diff else
+        (f"regerar move {len(diff)} arquivo(s). {esperado} sai da rodada de "
+         "calibracao desta sessao, que e efeito da secao 3 e nao achado."
+         + (f" Sem explicacao: {inesperado}, e cada um precisa de uma antes de ser "
+            "commitado." if inesperado else
+            " Nada mais se move, entao a regeneracao do XGBoost esta inteira no que "
+            "ja foi commitado."))),
 }
 print("\\n  " + VEREDITOS["assets"]["conclusao"])
 '''
@@ -523,6 +637,7 @@ from datetime import date
 ORDEM = [("ambiente", "Ambiente"), ("simbolos", "Simbolos de LaTeX"),
          ("tab7", "Colunas de IC e DM da tabela de variantes"),
          ("calibracao", "Rodada de calibracao canonica"),
+         ("semente_do_prophet", "A semente alcanca a banda do Prophet?"),
          ("tabpfn", "TabPFN por janela"), ("assets", "Assets regerados")]
 
 linhas = [f"# Conferencia da regeneracao do XGBoost (REF_ANTES_REGEN_PLACEHOLDER..{REF})",
@@ -532,6 +647,15 @@ linhas = [f"# Conferencia da regeneracao do XGBoost (REF_ANTES_REGEN_PLACEHOLDER
           "Cada veredito abaixo sai de uma medicao deste notebook, "
           "`notebooks/conferencia_regeneracao.ipynb`. O JSON ao lado guarda os numeros.",
           ""]
+
+# Uma linha no topo dizendo se a rodada vale. Um relatorio que enfileira vereditos sem
+# dizer que a bancada estava fora do lock convida a citar conclusao que a propria
+# rodada nao sustenta.
+if VEREDITOS.get("ambiente", {}).get("divergentes"):
+    linhas += ["> **Esta rodada nao e conclusiva.** O ambiente nao era o do lock, "
+               "entao todo veredito que dependa de valor numerico esta indeterminado. "
+               "O que nao depende de execucao -- simbolos e a leitura da tabela de "
+               "variantes -- continua valendo.", ""]
 for chave, titulo in ORDEM:
     d = VEREDITOS.get(chave)
     if not d:
@@ -617,6 +741,7 @@ mediram, para que o texto nao possa discordar dos numeros.
         md("## 3. Rodada de calibracao canonica"),
         code(CEL_CALIBRACAO),
         code(CEL_CALIBRACAO_DIFF),
+        code(CEL_CALIBRACAO_SEMENTE),
         md("""## 4. TabPFN por janela
 
 O item em aberto nao e o sMAPE do TabPFN, que ja existe: e a previsao janela a janela.
