@@ -37,7 +37,9 @@ EXPERIMENTOS = Path(
     r"\Cardiovascular Time Series\IJF_Series_Temporais_CV\02_experimentos"
 )
 SERIE_PY = EXPERIMENTOS / "kaggle" / "series_data.py"
-SAIDA = EXPERIMENTOS / "tabpfn_benchmark.ipynb"
+# Notebook fica em 02_experimentos/notebooks/, junto com os outros, e nao solto na
+# raiz da pasta de experimentos.
+SAIDA = EXPERIMENTOS / "notebooks" / "tabpfn_benchmark.ipynb"
 
 # rotulos de exibicao, na ordem em que a tabela final deve sair
 ORDEM_SAIDA = ["naive", "snaive", "snaive_drift", "xgboost", "catboost",
@@ -866,6 +868,7 @@ reproduzido aqui de proposito -- ele e um limite superior, nao um resultado.
 
     nb = caderno(celulas)
     valida(nb)
+    SAIDA.parent.mkdir(parents=True, exist_ok=True)
     SAIDA.write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"  notebook  {SAIDA.name}  ({len(celulas)} celulas, "
           f"{SAIDA.stat().st_size // 1024} KB)")

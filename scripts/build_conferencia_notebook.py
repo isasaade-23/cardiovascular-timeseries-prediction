@@ -36,6 +36,14 @@ from nbtools import caderno, code, md, valida  # noqa: E402
 
 SAIDA = ROOT / "notebooks" / "conferencia_regeneracao.ipynb"
 
+# O notebook versionado e o do repositorio; a copia no Drive e so o que se abre no
+# Colab. Ela e reescrita a cada geracao para as duas nao divergirem sem ninguem ver,
+# que e como uma analise acaba rodando de uma versao que ninguem consegue achar depois.
+DRIVE = Path(
+    r"G:\.shortcut-targets-by-id\1zRZlDXqjBRVUlO0Zys2L0W69eJvgMI58\Labs"
+    r"\Cardiovascular Time Series\IJF_Series_Temporais_CV\02_experimentos\notebooks"
+)
+
 # A regeneracao a conferir, e a arvore anterior a branch, que serve de "antes" para o
 # inventario de simbolos.
 REF_DEPOIS = "e829dc2"
@@ -643,6 +651,14 @@ reprovacao, e ele vale tanto quanto uma aprovacao valeria."""),
     SAIDA.write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"  notebook  {SAIDA.relative_to(ROOT)}  ({len(celulas)} celulas, "
           f"{SAIDA.stat().st_size // 1024} KB)")
+
+    if DRIVE.parent.exists():
+        DRIVE.mkdir(parents=True, exist_ok=True)
+        copia = DRIVE / SAIDA.name
+        copia.write_text(SAIDA.read_text(encoding="utf-8"), encoding="utf-8")
+        print(f"  copia    {copia}")
+    else:
+        print("  Drive nao montado: copia nao atualizada")
     return 0
 
 
