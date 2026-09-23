@@ -523,7 +523,10 @@ elif MODO != "nao rodar":
     # No modo de teste o checkpoint nao entra: ele guarda janelas da rodada completa,
     # e misturar as duas daria um resultado que nao e de nenhuma das duas.
     ck = "" if MODO.startswith("teste") else CHECKPOINT
-    !python scripts/run_benchmark.py --input-csv "$entrada" --models tabpfn --horizon 6 --min-train-size 60 --output-prefix results/revisao/tabpfn --checkpoint-csv "$ck" 2>&1 | tail -15
+    # Sem `tail`: numa rodada de mais de uma hora, filtrar a saida significa uma hora
+    # de tela vazia, em que travado e rodando sao a mesma coisa. O script imprime uma
+    # linha por janela com o tempo restante estimado.
+    !python scripts/run_benchmark.py --input-csv "$entrada" --models tabpfn --horizon 6 --min-train-size 60 --output-prefix results/revisao/tabpfn --checkpoint-csv "$ck"
 else:
     print("Nada a rodar. Para produzir o CSV, troque MODO acima.")
     print("Sem ele a secao seguinte pula o TabPFN e o item continua em aberto.")

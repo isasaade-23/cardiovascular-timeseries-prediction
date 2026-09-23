@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 
 import numpy as np
@@ -208,6 +209,19 @@ def run_backtest(
         if feitas:
             print(f"[INFO] {label}: retomando com {len(feitas)} janela(s) do checkpoint")
 
+    # Quantas janelas o rolling origin oferece. O numero nao esta escrito no codigo de
+    # proposito; ele sai do proprio gerador, entao muda junto com serie, horizonte e
+    # treino minimo sem ninguem lembrar. Calculado aqui porque o progresso precisa dele
+    # antes do fim, e reusado na exigencia dura la embaixo.
+    esperadas = sum(
+        1 for _ in rolling_origin_splits(
+            series, horizon=horizon, min_train_size=min_train_size,
+            max_train_size=max_train_size,
+        )
+    )
+    t0 = time.time()
+    calculadas = 0          # janelas de fato previstas, sem contar as do checkpoint
+
     for window_id, (train, test) in enumerate(
         rolling_origin_splits(
             series,
@@ -273,6 +287,7 @@ def run_backtest(
 
         y_true_all.append(y_true)
         y_pred_all.append(y_pred)
+        calculadas += 1
 
         train_end = train.index[-1]
         novas = [
@@ -298,15 +313,18 @@ def run_backtest(
                 checkpoint, index=False, mode="a" if existia else "w",
                 header=not existia)
 
-    # Exigencia dura: toda janela que o rolling origin oferece tem que chegar ao resultado.
-    # O numero nao esta escrito no codigo de proposito; ele sai do proprio gerador de
-    # janelas, entao muda junto com serie, horizonte e treino minimo sem ninguem lembrar.
-    esperadas = sum(
-        1 for _ in rolling_origin_splits(
-            series, horizon=horizon, min_train_size=min_train_size,
-            max_train_size=max_train_size,
-        )
-    )
+            # Progresso por janela, e so aqui. Checkpoint ligado quer dizer rodada
+            # longa por rede, e uma hora de silencio nao distingue "rodando" de
+            # "travado": quem esta olhando desiste ou reinicia sem precisar.
+            feitas_agora = len(y_true_all)
+            decorrido = time.time() - t0
+            resta = (esperadas - feitas_agora) * decorrido / max(1, calculadas)
+            print(f"[INFO] {label}: janela {feitas_agora}/{esperadas}, "
+                  f"{decorrido / 60:.1f} min decorridos, "
+                  f"~{resta / 60:.0f} min restantes", flush=True)
+
+    # Exigencia dura: toda janela que o rolling origin oferece tem que chegar ao
+    # resultado.
     if len(y_true_all) != esperadas:
         detalhe = "\n  ".join(descartadas) if descartadas else "sem motivo registrado"
         raise BenchmarkIncompleto(
