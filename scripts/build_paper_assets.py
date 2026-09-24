@@ -493,7 +493,7 @@ test origins. A negative difference means the expanding window is more accurate.
 \\label{{tab:janela}}
 \\begin{{tabular}}{{lrrrcrc}}
 \\toprule
-Model & Expanding & Sliding 60 & Diff. (pp) & 95\\% CI & $p$ & DM cells $p<0.05$ \\\\
+Model & Expanding & Sliding 60 & Expanding $-$ Sliding (pp) & 95\\% CI & $p$ & DM cells $p<0.05$ \\\\
 \\midrule
 {chr(10).join(linhas)}
 \\bottomrule

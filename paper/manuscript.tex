@@ -513,7 +513,10 @@ regime TimesFM leads at 4.74\% against 5.46\% for SARIMA.
 \input{figures/fig4_janela}
 \caption{Accuracy under an expanding training window and under a sliding 60-month window,
 on identical test origins. The classical models degrade when history is truncated; the
-foundation model does not, and overtakes them in that regime.}
+foundation model does not, and overtakes them in that regime. The annotation on each row
+is the cost of truncating, sliding minus expanding, so a positive value means the model
+loses accuracy when older history is discarded; Table~\ref{tab:janela} reports the same
+pairs with the opposite subtraction.}
 \label{fig:janela}
 \end{figure}
 
