@@ -573,9 +573,12 @@ what it was adding to the boosting models was the calendar.
 \input{figures/fig6_temperatura}
 \caption{Reduction in sMAPE from adding monthly minimum temperature as an exogenous
 covariate under the leakage-free climatology policy, with 95\% paired bootstrap intervals.
-Positive values favour the model with temperature. All three intervals exclude zero, which
-is why the effect is reported as suggestive rather than absent, and none clears the
-pre-declared horizon-level threshold, which is why it is not reported as established.}
+Positive values favour the model with temperature. The four models are ordered by how much
+seasonal structure their specification already carries, and the gain grows as that
+structure falls away: it is negative for Prophet, which fits an explicit annual
+seasonality, and largest for the two boosting models, whose only inputs are twelve lags.
+Three intervals exclude zero, but only XGBoost also reaches the pre-declared horizon-level
+threshold, so it is the one row reported as established rather than suggestive.}
 \label{fig:temp}
 \end{figure}
 

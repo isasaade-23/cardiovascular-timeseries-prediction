@@ -744,7 +744,10 @@ this comparison rather than being given an input it would ignore.
   axis lines=left, tick align=outside, tick pos=left,
   legend style={{at={{(0.02,0.98)}}, anchor=north west, draw=none, fill=none,
                  font=\scriptsize, legend columns=3, column sep=4pt}},
-  ymax=8.6,
+  ymin=4, ymax=8.6, ytick={{4,5,6,7,8}},
+  % Sem o ymin e o ytick explicitos, a escolha automatica punha a marca mais baixa em
+  % 5 e os tres modelos lideres ficavam abaixo dela, sem nenhuma referencia de leitura,
+  % com o ponto do SARIMA em h=1 encostado no eixo.
 ]
 {chr(10).join(series_h)}
 \legend{{{','.join(leg)}}}
@@ -828,7 +831,14 @@ this comparison rather than being given an input it would ignore.
 \end{{tikzpicture}}""")
 
     # ---------- fig6: efeito da temperatura ----------
-    mods = ["sarima", "catboost", "xgboost"]
+    # O Prophet entra. Ele ficava de fora desta lista desde quando estava fora da
+    # comparacao inteira, por um motivo que a revisao mostrou nao proceder. A Tabela 5
+    # foi corrigida e passou a ter as quatro linhas; a figura nao, e ficou mostrando so
+    # os tres ganhos positivos. Como o Prophet e o unico modelo que a covariavel piora,
+    # e como e nele que o argumento do mecanismo se apoia -- o ganho e inverso a
+    # sazonalidade que o modelo ja tem --, omiti-lo fazia a figura contar o oposto da
+    # tabela ao lado.
+    mods = ["prophet", "sarima", "catboost", "xgboost"]
     linhas = []
     for i, m in enumerate(mods):
         y = len(mods) - i
@@ -842,19 +852,19 @@ this comparison rather than being given an input it would ignore.
     labs = ",".join(ROTULO[m] for m in mods)
     escreve_figura("fig6_temperatura", rf"""\begin{{tikzpicture}}
 \begin{{axis}}[
-  width=0.78\textwidth, height=3.8cm,
+  width=0.78\textwidth, height=4.6cm,
   xlabel={{Reduction in sMAPE from the temperature covariate (pp)}},
-  xmin=-0.06, xmax=0.62,
+  xmin=-0.12, xmax=0.62,
   % com valores pequenos o pgfplots gera tick automatico em notacao cientifica
   % (-5 \cdot 10^{-2}) e os rotulos colidem. Tick e formato explicitos.
-  xtick={{0,0.1,0.2,0.3,0.4,0.5,0.6}},
+  xtick={{-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6}},
   scaled x ticks=false,
   xticklabel style={{/pgf/number format/fixed, /pgf/number format/precision=1}},
-  ymin=0.4, ymax=3.6, ytick={{{ticks}}}, yticklabels={{{labs}}},
+  ymin=0.4, ymax=4.6, ytick={{{ticks}}}, yticklabels={{{labs}}},
   axis lines=left, tick align=outside, tick pos=left,
 ]
 \draw[black!45, dashed, line width=0.6pt]
-  (axis cs:0,0.4) -- (axis cs:0,3.6);
+  (axis cs:0,0.4) -- (axis cs:0,4.6);
 {chr(10).join(linhas)}
 \end{{axis}}
 \end{{tikzpicture}}""")
