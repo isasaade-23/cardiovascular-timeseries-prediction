@@ -46,6 +46,12 @@ ROTULO = {
 COR = {
     "prophet": "0072B2", "sarima": "D55E00", "timesfm": "009E73",
     "xgboost": "E69F00", "catboost": "CC79A7",
+    # Papel, nao modelo. Tres figuras usavam a cor de um modelo para colorir algo que
+    # nao e modelo -- a banda de destaque da serie, as duas janelas de treino, a curva
+    # de temperatura -- e o leitor que aprende "azul = Prophet" na Figura 2 reencontra
+    # o mesmo azul na Figura 4 querendo dizer "janela expansiva". Sky blue da mesma
+    # paleta Okabe-Ito, reservada para a covariavel.
+    "temp": "56B4E9",
 }
 TOP3 = ["prophet", "sarima", "timesfm"]
 ORDEM = ["prophet", "sarima", "timesfm", "catboost", "xgboost"]
@@ -678,7 +684,7 @@ this comparison rather than being given an input it would ignore.
   every axis plot/.append style={{line width=0.5pt}},
 ]
 \addplot[draw=black!80, mark=none] coordinates {{{pts}}};
-\addplot[draw=none, fill=cprophet, fill opacity=0.10, forget plot]
+\addplot[draw=none, fill=black, fill opacity=0.07, forget plot]
   coordinates {{(2021.0,5400) (2024.0,5400) (2024.0,11100) (2021.0,11100)}} \closedcycle;
 % ancorado a direita e dentro do limite do eixo: centralizado em 2022.5 o rotulo
 % estourava a borda e saia cortado
@@ -754,9 +760,9 @@ this comparison rather than being given an input it would ignore.
         linhas.append(
             f"\\addplot[draw=black!28, line width=1.2pt, mark=none] "
             f"coordinates {{({e:.4f},{y}) ({s:.4f},{y})}};\n"
-            f"\\addplot[only marks, mark=*, mark size=2.4pt, draw=cprophet, fill=cprophet] "
+            f"\\addplot[only marks, mark=*, mark size=2.4pt, draw=black!80, fill=black!80] "
             f"coordinates {{({e:.4f},{y})}};\n"
-            f"\\addplot[only marks, mark=square*, mark size=2.0pt, draw=csarima, fill=csarima] "
+            f"\\addplot[only marks, mark=square*, mark size=2.0pt, draw=black!45, fill=black!45] "
             f"coordinates {{({s:.4f},{y})}};\n"
             f"\\node[anchor=west, font=\\scriptsize, text=black] "
             f"at (axis cs:{max(e, s) + 0.10:.4f},{y}) {{{dif:+.2f} pp}};")
@@ -776,8 +782,8 @@ this comparison rather than being given an input it would ignore.
 ]
 {chr(10).join(linhas)}
 \node[anchor=east, font=\scriptsize, text=black] at (axis cs:7.65,5.35)
-  {{\textcolor{{cprophet}}{{$\bullet$}} Expanding \quad
-    \textcolor{{csarima}}{{$\blacksquare$}} Sliding 60}};
+  {{\textcolor{{black!80}}{{$\bullet$}} Expanding \quad
+    \textcolor{{black!45}}{{$\blacksquare$}} Sliding 60}};
 \end{{axis}}
 \end{{tikzpicture}}""")
 
@@ -800,7 +806,7 @@ this comparison rather than being given an input it would ignore.
   legend style={{at={{(0,1.03)}}, anchor=south west, draw=none, fill=none,
                  font=\scriptsize, text=black}},
 ]
-\addplot[draw=cxgboost, mark=*, mark size=2.0pt, line width=1.1pt]
+\addplot[draw=black!80, mark=*, mark size=2.0pt, line width=1.1pt]
   coordinates {{{cm}}};
 \addlegendentry{{Deaths per month}}
 \end{{axis}}
@@ -808,13 +814,14 @@ this comparison rather than being given an input it would ignore.
   width=0.80\textwidth, height=4.8cm,
   axis y line*=right, axis x line=none,
   xmin=0.5, xmax=12.5,
-  ylabel={{Mean minimum temperature (C)}}, ylabel style={{text=black}},
+  ylabel={{Mean minimum temperature ($^\circ$C)}}, ylabel style={{text=black}},
   yticklabel style={{text=black}},
   tick align=outside,
   legend style={{at={{(1,1.03)}}, anchor=south east, draw=none, fill=none,
                  font=\scriptsize, text=black}},
 ]
-\addplot[draw=cprophet, mark=square*, mark size=1.7pt, line width=0.9pt, dashed]
+\addplot[draw=ctemp, mark=square*, mark size=1.7pt, line width=0.9pt, dashed,
+         mark options={{draw=ctemp, fill=ctemp, solid}}]
   coordinates {{{ct}}};
 \addlegendentry{{Minimum temperature}}
 \end{{axis}}

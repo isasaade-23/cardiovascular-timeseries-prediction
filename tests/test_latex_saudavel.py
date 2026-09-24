@@ -184,3 +184,33 @@ def test_nenhum_simbolo_desconhecido_em_modo_matematico():
         f"simbolos nao catalogados: {desconhecidos}. "
         "Classifique cada um em SIMBOLO_BASE ou em SIMBOLO_DE_PACOTE, para que a proxima "
         "troca de simbolo numa regeneracao nao passe calada.")
+
+
+# ------------------------------------------------------------------ paleta das figuras
+
+def test_a_paleta_do_preambulo_e_a_do_gerador():
+    """As figuras sao desenhadas duas vezes, e as duas tem de sair da mesma paleta.
+
+    O PDF colore pelas definicoes do preamble.tex; o PNG que entra no .docx colore pelo
+    dicionario COR do build_paper_assets.py, injetado no preambulo avulso da
+    rasterizacao. Nada ligava os dois, e eles ficaram tres semanas divergentes nas cinco
+    cores: o gerador migrou para Okabe-Ito e o preambulo continuou na paleta antiga.
+    A mesma figura saia com cores diferentes conforme o formato, e a versao do PDF era
+    a que confunde vermelho com verde sob deuteranopia.
+    """
+    gerador = (RAIZ / "scripts" / "build_paper_assets.py").read_text(encoding="utf-8")
+    bloco = re.search(r"COR = \{(.*?)\}", gerador, re.S)
+    assert bloco, "dicionario COR nao encontrado em build_paper_assets.py"
+    do_gerador = dict(re.findall(r'"(\w+)":\s*"(\w+)"', bloco.group(1)))
+
+    do_preambulo = dict(re.findall(r"\\definecolor\{c(\w+)\}\{HTML\}\{(\w+)\}",
+                                   _texto(PAPER / "preamble.tex")))
+
+    divergentes = {
+        k: (do_preambulo.get(k), v) for k, v in do_gerador.items()
+        if do_preambulo.get(k, "").upper() != v.upper()
+    }
+    assert not divergentes, (
+        "paleta divergente entre preamble.tex e build_paper_assets.py "
+        f"(preambulo, gerador): {divergentes}. A mesma figura sairia com cores "
+        "diferentes no PDF e no .docx.")
