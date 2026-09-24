@@ -28,7 +28,8 @@ forecast uncertainty; Diebold-Mariano test; epidemiological surveillance; Brazil
 Brazil. Foundation models pre-trained on large time series corpora are increasingly
 reported as outperforming classical alternatives in health forecasting. Such rankings are
 usually reported as point estimates, without any measure of how much of the observed gap
-is sampling noise.
+is sampling noise. We asked whether such a ranking survives a measure of its own
+uncertainty, and where forecasting accuracy on this series actually comes from.
 
 \noindent\textbf{Methods.} We benchmarked five forecasting approaches, SARIMA, Prophet,
 TimesFM, XGBoost and CatBoost, on monthly cardiovascular mortality in the state of
@@ -125,7 +126,10 @@ the public repository; individual records are not redistributed.
 S\~ao Paulo has one of the highest death registration completeness rates in Brazil
 \missing{reference and figure for death registration completeness in S\~ao Paulo; the
 value stated in an earlier draft was above 95\%, but we could not locate the source and
-it is not asserted here without one}. We used raw SIM data without garbage code
+it is not asserted here without one. A parallel draft cites 99.9\% for 2015--2016 from a
+record linkage study (Costa and others, Population Health Metrics, 2020), with its own
+note that the entry was assembled from a secondary mention and never checked against the
+source. Verify at source before asserting}. We used raw SIM data without garbage code
 redistribution, which should be considered when comparing against Global Burden of
 Disease estimates.
 
@@ -153,8 +157,11 @@ Models were evaluated by rolling origin cross-validation with an expanding windo
 windows and 618 out-of-sample forecasts per model. The 60-month minimum provides at least
 four effective seasonal cycles after the double differencing implied by the SARIMA
 specification. Every model saw identical windows and identical test dates, which is what
-makes the paired analysis below valid. Accuracy was summarised by mean absolute error
-(MAE), root mean squared error (RMSE) and symmetric mean absolute percentage error (sMAPE).
+makes the paired analysis below valid. The rolling origin design follows
+\citet{tashman2000}. Accuracy was summarised by mean absolute error (MAE), root mean
+squared error (RMSE) and symmetric mean absolute percentage error (sMAPE), and by the mean
+absolute scaled error (MASE), which states directly whether a model earns its complexity
+against a benchmark that requires no estimation \citep{hyndman2006}.
 
 \subsection{Uncertainty quantification}
 
@@ -170,6 +177,11 @@ rather than a comparison of overlapping marginal intervals.
 \textbf{Diebold-Mariano test.} Equality of predictive accuracy was tested at each horizon
 using the Diebold-Mariano statistic \citep{diebold1995} with the small-sample correction of
 Harvey, Leybourne and Newbold \citep{harvey1997}, with absolute error as the loss function.
+The long-run variance of the loss differential uses the standard truncation at $h-1$ lags
+for $h$-step-ahead forecasts, which absorbs no serial correlation at $h=1$. Recomputing
+every cell with a Bartlett kernel and a Newey-West bandwidth, which also absorbs dependence
+between overlapping windows, leaves all 90 cells on the same side of the 5\% threshold, so
+this approximation does not drive any conclusion reported here.
 
 \textbf{Pre-declared criterion.} To avoid selecting a favourable statistic after the fact,
 we declared before the analysis that an improvement counts as established only if the 95\%
@@ -376,25 +388,43 @@ incomplete. TabPFN, a transformer pre-trained on synthetic tabular tasks, was th
 under the identical protocol: the same 103 windows, the same six-month horizon, the same
 twelve lags of the target as the only inputs.
 
-It reaches an sMAPE of 6.04\%, ahead of CatBoost by 0.55 percentage points and of XGBoost by
-0.90, making it the strongest tabular model tested here. It sits ahead of both naive
+It reaches an sMAPE of 5.85\%, ahead of CatBoost by 0.74 percentage points and of XGBoost by
+1.03, making it the strongest tabular model tested here. It sits ahead of both naive
 references on the point estimate, at 6.18\% and 6.27\%, and behind the three leading models
-by more than 1.2 percentage points.
+by more than 1.0 percentage point.
 
-That last comparison is the one that carries. The advantage over the naive references is
-0.14 percentage points, and this paper does not treat a point estimate as a result: the
-paired test that Table~\ref{tab:variantes} applies to every feature engineering variant
-could not be run here, because the per-forecast records for this run were not available. The
-caution is not procedural. The best boosting variant reached a \emph{larger} margin over the
-seasonal naive method, 0.18 percentage points, and still failed that test with an interval
-of $[-0.45, +0.10]$ and no significant Diebold-Mariano cell. The honest summary is that
-TabPFN is the best tabular model in this comparison and that whether it beats a rule
-requiring no model remains untested.
+That last comparison is the one that carries, and here the paired test was run rather than
+deferred. Against the seasonal naive method the advantage is 0.42 percentage points with a
+paired interval of $[-0.698, -0.128]$ that excludes zero, and against the seasonal naive
+with annual drift it is 0.33 points with $[-0.622, -0.031]$, also excluding zero. This is a
+stronger result than any boosting variant obtained: the best of them, at a margin of 0.18
+points over the same benchmark, produced an interval of $[-0.45, +0.10]$ that contains zero.
+The criterion declared in Section~\ref{sec:metodos} nonetheless is not met, because it
+requires agreement between the interval and the horizon-level tests, and the
+Diebold-Mariano test reaches significance in only one of six cells against each seasonal
+benchmark.
+
+The distribution of that single cell is more informative than the aggregate. Significance
+is confined to the one-month horizon ($p=0.001$) and the differential decays monotonically
+thereafter, with $p$ above 0.35 from the third horizon onward. The advantage of the tabular
+foundation model over seasonal persistence is therefore a one-month-ahead advantage, and it
+does not survive the six-month horizon this paper is about. Reported as such, the finding is
+neither a defeat of the naive benchmark nor a null: it is a horizon-dependent gain that the
+pre-declared criterion, by design, declines to call established.
+
+One caveat applies to this row and to no other in the paper. TabPFN was evaluated through a
+hosted inference API, so the model version is not captured by the pinned environment that
+fixes every other result here. The same protocol returned 6.04\% under an earlier client
+release and 5.85\% under the current one, a shift of 0.19 percentage points, larger than the
+version sensitivity that motivated pinning the environment in the first place. This number
+is a dated measurement rather than a quantity a reader can reproduce from the repository,
+and it should be read accordingly.
 
 The reviewer's request is nonetheless answered, and answered against the reviewer's
 expectation: including the strongest tabular learner does not change the conclusion. The
-distance from TabPFN to Prophet is 1.33 percentage points, wider than the entire spread
-among the three leading models. What the boosting results were showing was not the absence
+distance from TabPFN to Prophet is 1.14 percentage points, wider than the entire spread
+among the three leading models, and the Diebold-Mariano test places SARIMA ahead of it in
+four of six horizons. What the boosting results were showing was not the absence
 of a good tabular model but the nature of the task: 168 monthly observations dominated by a
 clean annual cycle do not reward this class of method.
 
@@ -679,6 +709,20 @@ possible cause-of-death misclassification.
 comparability with Global Burden of Disease estimates, and SIM records take months to
 consolidate, which constrains real-time application.
 
+\textbf{Dependence between windows.} The block bootstrap resamples whole rolling origin
+windows, which respects the dependence among the six horizons inside a window. Consecutive
+windows nonetheless share five of their six test dates and almost all of their training
+data, so treating windows as exchangeable is still an approximation, and the intervals
+reported here are, if anything, narrower than they should be. A moving block bootstrap over
+adjacent windows would be the stricter alternative.
+
+\textbf{Multiplicity.} Tables~\ref{tab:pares}, \ref{tab:janela} and
+\ref{tab:temperatura}, together with Section~\ref{sec:naive}, report on the order of one
+hundred hypothesis tests with no correction for multiple comparisons. The pre-declared
+criterion, which requires agreement between an interval and at least three of six
+horizon-level tests, was adopted in place of a formal adjustment; it is a stricter bar than
+any single test, but it is not an error-rate control.
+
 \subsection{Conclusion}
 
 With uncertainty measured, a zero-shot foundation model and two classical models are
@@ -693,16 +737,25 @@ measuring the uncertainty rather than reporting the ranking.
 
 \section*{Declarations}
 
-\textbf{Author contributions (CRediT).} \missing{author contribution statement per CRediT
-taxonomy, to be assigned by the authors}
+\textbf{Author contributions (CRediT).} Fabiano B. N. Filho: Conceptualization,
+Methodology, Software, Formal analysis, Data curation, Writing -- original draft,
+Visualization, Project administration.
+Isabela Venancio da Silva: Methodology, Software, Validation, Formal analysis,
+Investigation, Writing -- review \& editing, Visualization.
+Alexandre D. P. Chiavegatto Filho: Conceptualization, Resources, Supervision,
+Writing -- review \& editing.
 
-\textbf{Funding.} \missing{funding sources and grant numbers, or a statement that the work
-received no specific funding}
+\textbf{Funding.} \aberto{escolher a alternativa que corresponde aos fatos, e apagar a
+outra. (A) This work was supported by the Coordena\c{c}\~ao de Aperfei\c{c}oamento de
+Pessoal de N\'ivel Superior, Brazil (CAPES), Finance Code 001. (B) This research did not
+receive any specific grant from funding agencies in the public, commercial, or
+not-for-profit sectors.}
 
 \textbf{Ethics.} This study used publicly available, de-identified secondary mortality
 records distributed by the Brazilian Ministry of Health, with no individual identification
-and no contact with participants. \missing{confirmation of institutional review board waiver
-or approval number, if the institution requires one for public secondary data}
+and no contact with participants. Under Resolution 510/2016 of the Brazilian National
+Health Council, research based exclusively on publicly available, de-identified secondary
+data does not require review by a research ethics committee.
 
 \textbf{Competing interests.} The authors declare no competing interests.
 
