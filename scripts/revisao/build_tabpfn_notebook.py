@@ -405,7 +405,7 @@ def com_retentativa(fn, limitador, tentativas=len(ESCADA)):
             # queima uma hora para falhar igual. O servidor informa a hora do reset,
             # entao a saida certa e parar na hora e repetir o que ele disse.
             if "daily" in msg.lower() or "resets at" in msg.lower():
-                quando = re.search(r"[Rr]esets at ([0-9:\- ]+UTC)", msg)
+                quando = re.search(r"[Rr]esets at ([0-9: -]+UTC)", msg)
                 print("\\n" + "=" * 68)
                 print("  COTA DIARIA ESGOTADA. Nao adianta esperar aqui.")
                 if quando:
