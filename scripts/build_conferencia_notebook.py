@@ -486,14 +486,30 @@ elif MODO != "nao rodar":
     # A chave vem dos Secrets do Colab, do segredo PRIOR_LABS_TOKEN. Nao ha prompt de
     # digitacao aqui de proposito: chave digitada numa celula fica no notebook salvo.
     # A biblioteca le a variavel TABPFN_TOKEN, entao o segredo alimenta a variavel.
+    # Variantes numeradas entram na busca porque a cota e diaria e por conta: quando
+    # ela esgota no meio de uma rodada, a saida e uma chave de outra conta, e o
+    # segredo novo acaba nomeado PRIOR_LABS_TOKEN2, 3, e assim por diante. A mais
+    # recente primeiro. Os Secrets vem antes de os.environ de proposito: na ordem
+    # inversa, a chave da execucao anterior sobrevive a troca do segredo.
     from google.colab import userdata
-    token = userdata.get("PRIOR_LABS_TOKEN")
+    token, de_onde = None, None
+    for nome_segredo in [f"PRIOR_LABS_TOKEN{n}" for n in ("5", "4", "3", "2", "")]:
+        try:
+            token = userdata.get(nome_segredo)
+        except Exception:
+            token = None
+        if token:
+            de_onde = nome_segredo
+            break
     if not token:
         raise SystemExit(
-            "Segredo PRIOR_LABS_TOKEN vazio ou sem acesso para este notebook. "
-            "No icone de chave da barra lateral, confira o valor e ligue o acesso.")
+            "Nenhum segredo PRIOR_LABS_TOKEN com valor e com acesso para este "
+            "notebook. No icone de chave da barra lateral, confira o valor e ligue "
+            "o acesso.")
     os.environ["TABPFN_TOKEN"] = token.strip()
-    print(f"  chave lida dos Secrets, {len(os.environ['TABPFN_TOKEN'])} caracteres")
+    # Os ultimos caracteres, para conferir de olho QUAL chave esta em uso.
+    print(f"  chave de {de_onde}, terminando em "
+          f"...{os.environ['TABPFN_TOKEN'][-6:]}")
 
     # Checkpoint no Drive, e nao no disco da sessao. Uma rodada de mais de uma hora
     # que cai no minuto 50 sem isto custa a hora inteira, e ja custou uma vez: foi

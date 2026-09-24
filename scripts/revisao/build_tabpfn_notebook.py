@@ -91,27 +91,40 @@ warnings.filterwarnings("ignore")
 # le a variavel de ambiente TABPFN_TOKEN, entao um alimenta o outro aqui.
 # tabpfn_client.fit() levanta erro sem token e nunca abre prompt sozinho, entao o token
 # tem de estar definido antes de qualquer chamada.
-NOMES_SEGREDO = ["PRIOR_LABS_TOKEN", "TABPFN_TOKEN"]
+# Variantes numeradas entram na busca porque a cota e DIARIA e por conta: quando ela
+# esgota no meio de uma rodada, a saida e uma chave de outra conta, e o segredo novo
+# acaba nomeado PRIOR_LABS_TOKEN2, 3, e assim por diante. Sem isto o notebook lia o
+# primeiro nome, achava a chave velha e batia na mesma cota esgotada -- parecendo que
+# a conta nova nao adiantou. A ordem e decrescente: a mais recente primeiro.
+NOMES_SEGREDO = [f"PRIOR_LABS_TOKEN{n}" for n in ("5", "4", "3", "2", "")]
+NOMES_SEGREDO += ["TABPFN_TOKEN"]
 
-TOKEN, origem = os.environ.get("TABPFN_TOKEN"), "variavel de ambiente"
+# Os Secrets vem ANTES da variavel de ambiente, e nao depois. Na ordem inversa, uma
+# execucao anterior desta celula deixava a chave velha em os.environ e reexecutar
+# continuava pegando ela, mesmo com o segredo ja trocado -- o que faz uma conta nova
+# parecer que nao adiantou.
+TOKEN, origem = None, None
+try:
+    from google.colab import userdata
+    for _nome in NOMES_SEGREDO:
+        try:
+            TOKEN = userdata.get(_nome)
+        except Exception:
+            TOKEN = None
+        if TOKEN:
+            origem = f"Secrets do Colab ({_nome})"
+            break
+except ImportError:
+    pass
 if not TOKEN:
-    try:
-        from google.colab import userdata
-        for _nome in NOMES_SEGREDO:
-            try:
-                TOKEN = userdata.get(_nome)
-            except Exception:
-                TOKEN = None
-            if TOKEN:
-                origem = f"Secrets do Colab ({_nome})"
-                break
-    except ImportError:
-        pass
+    TOKEN, origem = os.environ.get("TABPFN_TOKEN"), "variavel de ambiente"
 if not TOKEN:
     TOKEN = getpass("Token da PriorLabs (platform.priorlabs.ai/account/api-keys): ")
     origem = "digitado agora"
 os.environ["TABPFN_TOKEN"] = TOKEN.strip()
-print(f"token definido, {len(os.environ['TABPFN_TOKEN'])} caracteres, de {origem}")
+# Os ultimos caracteres, para conferir de olho QUAL chave esta em uso sem expo-la.
+print(f"token de {origem}, {len(os.environ['TABPFN_TOKEN'])} caracteres, "
+      f"terminando em ...{os.environ['TABPFN_TOKEN'][-6:]}")
 '''
 
 CEL_PROTOCOLO = '''
@@ -387,6 +400,19 @@ def com_retentativa(fn, limitador, tentativas=len(ESCADA)):
         except Exception as e:
             msg = str(e)
             if "429" not in msg and "Too Many Requests" not in msg.lower():
+                raise
+            # Cota diaria nao e rajada: esperar a escada inteira nao a reabre, so
+            # queima uma hora para falhar igual. O servidor informa a hora do reset,
+            # entao a saida certa e parar na hora e repetir o que ele disse.
+            if "daily" in msg.lower() or "resets at" in msg.lower():
+                quando = re.search(r"[Rr]esets at ([0-9:\- ]+UTC)", msg)
+                print("\\n" + "=" * 68)
+                print("  COTA DIARIA ESGOTADA. Nao adianta esperar aqui.")
+                if quando:
+                    print(f"  Reabre em {quando.group(1)}.")
+                print("  O checkpoint esta salvo: rode esta celula de novo depois do")
+                print("  reset e ela retoma de onde parou, sem repetir nenhuma janela.")
+                print("=" * 68)
                 raise
             if k == tentativas - 1:
                 raise

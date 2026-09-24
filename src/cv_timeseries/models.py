@@ -269,6 +269,13 @@ def _classe_tabpfn_limitada():
                     # ou numa serie malformada so gasta tempo e esconde a causa.
                     if not self._e_limite_de_taxa(exc) or tentativa == self.tentativas:
                         raise
+                    # Cota diaria tambem sobe na hora, pela mesma razao: a escada
+                    # inteira nao reabre uma janela que so vira no dia seguinte.
+                    if "daily" in str(exc).lower() or "resets at" in str(exc).lower():
+                        print("[ERRO] cota diaria esgotada; o checkpoint esta salvo. "
+                              "Rode de novo depois do reset informado acima.",
+                              flush=True)
+                        raise
                     espera = self.ESCADA[min(tentativa - 1, len(self.ESCADA) - 1)]
                     # O servidor sabe melhor que a escada quanto falta; se ele disser,
                     # e o que vale.
