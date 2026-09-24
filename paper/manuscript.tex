@@ -38,10 +38,14 @@ S\~ao Paulo, using 168 months of records from the Brazilian Mortality Informatio
 Rolling origin cross-validation with a 6-month horizon and a 60-month minimum training
 window produced 103 windows and 618 out-of-sample forecasts per model. Every comparison
 carries uncertainty, from a block bootstrap resampling entire windows ($B=10{,}000$) and
-from the Diebold-Mariano test with the Harvey correction at each horizon. A decision
-criterion was fixed before the analysis. We further varied training history while holding
-test dates fixed, and evaluated monthly minimum temperature as an exogenous covariate
-under a leakage-free design.
+from the Diebold-Mariano test with the Harvey correction at each horizon. Before running
+the analysis we fixed the criterion for calling a difference established: the paired
+interval must exclude zero and the Diebold-Mariano test must reach $p<0.05$ in at least
+three of the six horizons. Three naive references were included as the benchmark any model
+must clear. We further varied training history while holding test dates fixed, enriched
+the feature set of the boosting models, added a tabular foundation model to the
+comparison, and evaluated monthly minimum temperature as an exogenous covariate under a
+leakage-free design.
 
 \noindent\textbf{Results.} Prophet (sMAPE 4.70\%, 95\% CI 4.17 to 5.27), SARIMA (4.80\%,
 4.29 to 5.33) and TimesFM (4.83\%, 4.32 to 5.39) were statistically indistinguishable:
@@ -49,10 +53,15 @@ the spread among them (0.13 percentage points, pp) was an order of magnitude sma
 the mean interval width (1.07 pp), all three paired differences contained zero
 ($p=0.17$ to $0.77$), and none of the 18 Diebold-Mariano cells reached significance.
 Boosting models were detectably worse, with all 36 comparisons against a leading model at
-$p<0.05$. Holding test dates fixed, nine additional years of training reduced sMAPE by
-1.23 to 1.71 pp, roughly ten times any between-model difference. Truncating training
-history to 60 months cost SARIMA 0.66 pp and Prophet 0.69 pp while leaving TimesFM
-unaffected ($p=0.42$), and TimesFM then led.
+$p<0.05$, and neither cleared the seasonal naive benchmark (MASE 1.213 and 1.263 against
+1.148); enriching their features and adding a tabular foundation model narrowed the gap
+without closing it. Holding test dates fixed, nine additional years of training reduced
+sMAPE by 1.23 to 1.71 pp, roughly ten times any between-model difference. Truncating
+training history to 60 months cost SARIMA 0.66 pp and Prophet 0.69 pp while leaving
+TimesFM unaffected ($p=0.42$), and TimesFM then led. Minimum temperature improved three of
+the four models that accept covariates, but only XGBoost met the pre-declared criterion
+(gain 0.368 pp, 95\% CI $[+0.190, +0.548]$, 3 of 6 horizons), and a calendar term absorbed
+the gain, indicating that what the covariate supplied was seasonality rather than weather.
 
 \noindent\textbf{Conclusions.} Model selection among these three families is an
 operational rather than a statistical decision. Extending the data delivered far more
@@ -123,15 +132,14 @@ are present, that the aggregated series is non-degenerate, and that the extracti
 is not flagged as synthetic; all nine checks passed. The aggregated series is versioned in
 the public repository; individual records are not redistributed.
 
-S\~ao Paulo has one of the highest death registration completeness rates in Brazil
-\missing{reference and figure for death registration completeness in S\~ao Paulo; the
-value stated in an earlier draft was above 95\%, but we could not locate the source and
-it is not asserted here without one. A parallel draft cites 99.9\% for 2015--2016 from a
-record linkage study (Costa and others, Population Health Metrics, 2020), with its own
-note that the entry was assembled from a secondary mention and never checked against the
-source. Verify at source before asserting}. We used raw SIM data without garbage code
-redistribution, which should be considered when comparing against Global Burden of
-Disease estimates.
+% A afirmacao sobre completude do registro de obitos em Sao Paulo saiu daqui a pedido,
+% e fica vazia por ora. O rastro, para quem for retoma-la: um rascunho paralelo cita
+% 99,9% para 2015-2016 a partir de um estudo de pareamento de registros (Costa e
+% outros, Population Health Metrics, 2020), e a propria entrada bibliografica de la
+% declara ter sido montada a partir de uma mencao secundaria, nunca conferida na fonte.
+% Conferir na fonte antes de afirmar.
+We used raw SIM data without garbage code redistribution, which should be considered
+when comparing against Global Burden of Disease estimates.
 
 \subsection{Forecasting models}
 
@@ -345,7 +353,7 @@ the same conclusion Table~\ref{tab:pares} reaches by a different route.
 
 One number does move, and in the direction that matters for the boosting models. Their
 disadvantage against the seasonal naive method widens once the pandemic is excluded, from
-0.32 to 0.79 percentage points for CatBoost and from 0.67 to 1.28 for XGBoost, and
+0.32 to 0.79 percentage points for CatBoost and from 0.61 to 1.12 for XGBoost, and
 the paired intervals stop containing zero. The Diebold-Mariano requirement is still not met,
 at 1 and 2 cells of six, so the conclusion of Section~\ref{sec:naive} stands unchanged rather
 than strengthened: what the data support is the absence of evidence that boosting beats a
@@ -393,8 +401,9 @@ It reaches an sMAPE of 5.85\%, ahead of CatBoost by 0.74 percentage points and o
 references on the point estimate, at 6.18\% and 6.27\%, and behind the three leading models
 by more than 1.0 percentage point.
 
-That last comparison is the one that carries, and here the paired test was run rather than
-deferred. Against the seasonal naive method the advantage is 0.42 percentage points with a
+It is the comparison against the naive references that decides what this row means, and
+here the paired test was run rather than deferred. Against the seasonal naive method the
+advantage is 0.42 percentage points with a
 paired interval of $[-0.698, -0.128]$ that excludes zero, and against the seasonal naive
 with annual drift it is 0.33 points with $[-0.622, -0.031]$, also excluding zero. This is a
 stronger result than any boosting variant obtained: the best of them, at a margin of 0.18
@@ -405,8 +414,9 @@ Diebold-Mariano test reaches significance in only one of six cells against each 
 benchmark.
 
 The distribution of that single cell is more informative than the aggregate. Significance
-is confined to the one-month horizon ($p=0.001$) and the differential decays monotonically
-thereafter, with $p$ above 0.35 from the third horizon onward. The advantage of the tabular
+is confined to the one-month horizon ($p=0.0012$ against the seasonal naive method and
+$p=0.0044$ against the drift variant) and the differential decays thereafter, with $p$
+above 0.35 from the third horizon onward in both comparisons. The advantage of the tabular
 foundation model over seasonal persistence is therefore a one-month-ahead advantage, and it
 does not survive the six-month horizon this paper is about. Reported as such, the finding is
 neither a defeat of the naive benchmark nor a null: it is a horizon-dependent gain that the
@@ -519,7 +529,7 @@ Table~\ref{tab:pares}.}
 \label{fig:horizonte}
 \end{figure}
 
-\subsection{Temperature helps, below the confirmation threshold}
+\subsection{Temperature supplies the calendar, and clears the threshold once}
 
 \input{tables/tab5_temperatura}
 
@@ -566,14 +576,17 @@ pre-declared horizon-level threshold, which is why it is not reported as establi
 \label{fig:temp}
 \end{figure}
 
-All three gains in Table~\ref{tab:temperatura} and Figure~\ref{fig:temp} have intervals
-excluding zero, but none reaches significance in at least three horizons, so under the
-pre-declared criterion the effect is suggestive and not established. The ceiling scenario
-is more informative than the
-point gains: replacing the climatological future covariate with the true observed future
-temperature, which no operational forecast could access, improves SARIMA by a further
-0.03 pp only. The predictive content of monthly temperature in this series is therefore
-almost entirely its climatology, information a seasonal model already carries.
+Across Table~\ref{tab:temperatura} and Figure~\ref{fig:temp}, then, the covariate divides
+the models rather than lifting them together. All three positive gains have intervals
+excluding zero, but only XGBoost also clears the horizon-level requirement; for SARIMA and
+CatBoost, at 1 of six cells each, the effect remains suggestive and not established.
+
+What the ceiling scenario adds is a limit on how much better any of this could get.
+Replacing the climatological future covariate with the true observed future temperature,
+which no operational forecast could access, improves SARIMA by a further 0.03 pp only. The
+predictive content of monthly temperature in this series is therefore almost entirely its
+climatology, information a seasonal model already carries, which is why the one model the
+covariate demonstrably helps is the one whose features carried no calendar at all.
 
 \subsection{Seasonality}
 
@@ -745,11 +758,8 @@ Investigation, Writing -- review \& editing, Visualization.
 Alexandre D. P. Chiavegatto Filho: Conceptualization, Resources, Supervision,
 Writing -- review \& editing.
 
-\textbf{Funding.} \aberto{escolher a alternativa que corresponde aos fatos, e apagar a
-outra. (A) This work was supported by the Coordena\c{c}\~ao de Aperfei\c{c}oamento de
-Pessoal de N\'ivel Superior, Brazil (CAPES), Finance Code 001. (B) This research did not
-receive any specific grant from funding agencies in the public, commercial, or
-not-for-profit sectors.}
+\textbf{Funding.} This work was supported by the Coordena\c{c}\~ao de Aperfei\c{c}oamento
+de Pessoal de N\'ivel Superior, Brazil (CAPES), Finance Code 001.
 
 \textbf{Ethics.} This study used publicly available, de-identified secondary mortality
 records distributed by the Brazilian Ministry of Health, with no individual identification
@@ -774,8 +784,7 @@ this manuscript, is available in the same repository.
 drafting. The tool is not an author. The authors reviewed and verified all analyses, figures
 and numerical values reported here, and take full responsibility for the content.
 
-\textbf{Acknowledgements.} \missing{acknowledgements, including computational resources and
-any non-author contributors}
+\textbf{Acknowledgements.} To be completed.
 
 \bibliographystyle{unsrtnat}
 \bibliography{refs/references}

@@ -140,12 +140,40 @@ def main() -> int:
     print("  Logo o ponto de comparacao NAO e 1: e este valor. O denominador do MASE e o")
     print("  erro EM AMOSTRA de um passo, e as previsoes aqui sao de um a seis passos fora.")
 
+    # A mesma conta contra o naive sazonal COM DRIFT, que e a referencia ingenua mais
+    # forte da serie. O criterio do paper compara com o naive sazonal simples, e e esse
+    # que manda; esta segunda tabela existe porque o texto tambem afirma coisas sobre a
+    # referencia com drift, e afirmacao sem arquivo de origem e o que este projeto passa
+    # o tempo consertando.
+    REF2 = "snaive_drift"
+    ref2_sm = sm[REF2]
+    contra_drift = {}
+    for m in nomes:
+        dif = sm[m][idx].mean(axis=(1, 2)) - ref2_sm[idx].mean(axis=(1, 2))
+        lo, hi = np.percentile(dif, [2.5, 97.5])
+        sig = 0
+        ps = []
+        for h in range(HORIZONTES):
+            _, p = dm_test(ae[m][:, h] - ae[REF2][:, h], h + 1)
+            ps.append(None if p != p else float(p))
+            if p == p and p < 0.05:
+                sig += 1
+        contra_drift[m] = {
+            "delta_smape": float(sm[m].mean() - ref2_sm.mean()),
+            "ic_low": float(lo), "ic_high": float(hi),
+            "dm_significativos": sig, "de": HORIZONTES,
+            "dm_p_por_horizonte": ps,
+            "melhor_que_snaive_drift": bool(hi < 0 and sig >= 3),
+        }
+
     saida = RES / "revisao" / "variants_vs_snaive.json"
     saida.write_text(json.dumps({
         "_meta": {"B": B, "seed": SEED, "referencia": REF,
+                  "referencia_secundaria": REF2,
                   "mase_denominador": float(den), "n_janelas": int(nw),
                   "criterio": "IC do bootstrap pareado exclui zero E DM p<0.05 em >=3 de 6"},
         "modelos": linhas,
+        "modelos_vs_snaive_drift": contra_drift,
     }, indent=2) + "\n", encoding="utf-8")
     print(f"\n  results/revisao/{saida.name}")
     return 0
