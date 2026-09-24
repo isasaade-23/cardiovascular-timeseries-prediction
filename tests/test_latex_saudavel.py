@@ -214,3 +214,47 @@ def test_a_paleta_do_preambulo_e_a_do_gerador():
         "paleta divergente entre preamble.tex e build_paper_assets.py "
         f"(preambulo, gerador): {divergentes}. A mesma figura sairia com cores "
         "diferentes no PDF e no .docx.")
+
+
+# ---------------------------------------------------------------- figuras orfas
+
+# Figuras que sao geradas de proposito sem entrar no manuscrito: elas respondem ao
+# parecer na carta-resposta, nao no artigo. A lista existe para que "fora do manuscrito"
+# seja uma decisao escrita e nao um esquecimento -- que foi o que aconteceu com as seis,
+# geradas desde agosto, com rotulo, e nunca \input em lugar nenhum. O teste irmao cobria
+# so tables/, entao nada reclamava.
+#
+# Tirar uma figura daqui e nao a incluir no manuscrito reprova. Incluir e nao tirar
+# daqui tambem.
+FIGURAS_FORA_DO_MANUSCRITO = {
+    "revisao_fig_calibracao",
+    "revisao_fig_enriched_janela",
+    "revisao_fig_naive_estendida",
+    "revisao_fig_optuna",
+    "revisao_fig_temp_diffcal",
+    "revisao_fig_variantes",
+}
+
+
+def test_toda_figura_gerada_ou_entra_no_documento_ou_esta_declarada():
+    """Figura gerada que nao e input nao chega ao leitor, igual a tabela.
+
+    A versao deste teste para tabelas ja existia e pegou duas. As figuras ficaram sem
+    cobertura, e seis delas passaram um mes sendo geradas, rasterizadas e nunca lidas.
+    """
+    incluidas = set(re.findall(r"\\input\{figures/([^}]+)\}", _texto(MANUSCRITO)))
+    existentes = {f.stem for f in (PAPER / "figures").glob("*.tex")}
+
+    fora = sorted(existentes - incluidas - FIGURAS_FORA_DO_MANUSCRITO)
+    assert not fora, (
+        f"figuras geradas, nunca incluidas e nao declaradas: {fora}. "
+        "Ou entram no manuscrito, ou entram em FIGURAS_FORA_DO_MANUSCRITO com o motivo.")
+
+    declaradas_mas_incluidas = sorted(FIGURAS_FORA_DO_MANUSCRITO & incluidas)
+    assert not declaradas_mas_incluidas, (
+        f"declaradas como fora do manuscrito e mesmo assim incluidas: "
+        f"{declaradas_mas_incluidas}. Tire-as da lista.")
+
+    declaradas_inexistentes = sorted(FIGURAS_FORA_DO_MANUSCRITO - existentes)
+    assert not declaradas_inexistentes, (
+        f"declaradas na lista e nao geradas por ninguem: {declaradas_inexistentes}.")
